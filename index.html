@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lift Register</title>
+
+<style>
+  :root {
+    --bg: #EDEEEC;
+    --card: #FFFFFF;
+    --ink: #16191A;
+    --ink-2: #566063;
+    --ink-3: #869092;
+    --line: #D3D8D5;
+    --accent: #1B6873;
+    --good: #2E6B45;
+    --good-bg: #DCEBE2;
+    --warn: #8A5A17;
+    --warn-bg: #F4E9D8;
+    --off: #6B7477;
+    --off-bg: #E3E6E5;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 17px;
+    line-height: 1.5;
+    padding: 20px 18px 60px;
+  }
+
+  .wrap { max-width: 520px; margin: 0 auto; }
+
+  .brand {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 18px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .card-top {
+    padding: 20px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .code {
+    font-family: var(--mono);
+    font-size: 15px;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+  }
+
+  h1 { font-size: 30px; line-height: 1.1; margin: 0; letter-spacing: -0.02em; }
+
+  .pill {
+    align-self: flex-start;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 3px;
+  }
+  .pill.active     { background: var(--good-bg); color: var(--good); }
+  .pill.calledoff  { background: var(--warn-bg); color: var(--warn); }
+  .pill.pickedup   { background: var(--off-bg);  color: var(--off);  }
+
+  dl { margin: 0; }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 13px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .row:last-child { border-bottom: none; }
+  .row dt {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-top: 3px;
+    white-space: nowrap;
+  }
+  .row dd {
+    margin: 0;
+    text-align: right;
+    font-weight: 550;
+    word-break: break-word;
+  }
+  .row dd.mono { font-family: var(--mono); font-size: 15px; font-weight: 500; }
+
+  .note {
+    margin-top: 22px;
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+
+  a { color: var(--accent); }
+
+  /* the list you see when no machine is specified */
+  .list { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+  .list a {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 15px 18px;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .list a:active { background: var(--bg); }
+  .list .lbl { font-weight: 600; }
+  .list .sub { font-size: 13px; color: var(--ink-3); }
+  .list .qr { font-family: var(--mono); font-size: 14px; color: var(--accent); }
+
+  .lede { color: var(--ink-2); font-size: 15px; margin: 0 0 18px; }
+
+  .missing { padding: 26px 20px; text-align: center; }
+  .missing h1 { font-size: 22px; margin-bottom: 8px; }
+  .missing p { color: var(--ink-2); font-size: 15px; margin: 0; }
+
+  footer {
+    margin-top: 34px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+</style>
+</head>
+
+<body>
+<div class="wrap">
+  <div class="brand">Lift Register</div>
+
+  <!-- Everything below gets filled in by the script at the bottom. -->
+  <div id="app"></div>
+
+  <footer>Prototype — sample data only</footer>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// 1. THE MACHINES
+//
+// Fake machines for testing. Later this comes from a real database; for now
+// it's just a list written into the page. "qr" is the code printed on the tag.
+// ---------------------------------------------------------------------------
+
+const MACHINES = [
+  { qr: "A4X7", unit: "SBL-1044821", serial: "GS4390-181422", vendor: "Sunbelt",         type: "Scissor lift", size: "43 ft", status: "active"    },
+  { qr: "B2K9", unit: "UR-7719340",  serial: "GS3246-905118", vendor: "United Rentals",  type: "Scissor lift", size: "32 ft", status: "active"    },
+  { qr: "C8M3", unit: "SBL-1044977", serial: "S60XC-330281",  vendor: "Sunbelt",         type: "Boom lift",    size: "60 ft", status: "active"    },
+  { qr: "D5R1", unit: "HRC-4420118", serial: "GS1930-772904", vendor: "Herc",            type: "Scissor lift", size: "19 ft", status: "calledoff" },
+  { qr: "E7T4", unit: "UR-7719512",  serial: "Z45-25J-118773",vendor: "United Rentals",  type: "Boom lift",    size: "45 ft", status: "active"    },
+  { qr: "F1W8", unit: "HRC-4420663", serial: "GS4047-661209", vendor: "Herc",            type: "Scissor lift", size: "40 ft", status: "pickedup"  }
+];
+
+// Friendly wording for each status code.
+const STATUS_LABEL = {
+  active:    "On rent",
+  calledoff: "Called off",
+  pickedup:  "Picked up"
+};
+
+
+// ---------------------------------------------------------------------------
+// 2. WHICH MACHINE WAS SCANNED?
+//
+// The QR tag encodes a web address ending in ?id=A4X7
+// This pulls that "A4X7" back out of the address bar.
+// If there's no id in the address, scannedId is null.
+// ---------------------------------------------------------------------------
+
+const scannedId = new URLSearchParams(window.location.search).get("id");
+
+// Look through the list for a machine whose qr code matches.
+// toUpperCase() so a lowercase ?id=a4x7 still works.
+const machine = MACHINES.find(m => m.qr === (scannedId || "").toUpperCase());
+
+
+// ---------------------------------------------------------------------------
+// 3. PUT SOMETHING ON THE SCREEN
+//
+// Three possible situations, handled in order.
+// ---------------------------------------------------------------------------
+
+const app = document.getElementById("app");
+
+if (!scannedId) {
+  // Nothing was scanned — someone opened the plain address.
+  // Show the test list so you can tap through without a printed tag.
+  app.innerHTML = `
+    <p class="lede">No machine scanned. Pick one to preview what an operator
+    sees after scanning its tag.</p>
+    <div class="list">
+      ${MACHINES.map(m => `
+        <a href="?id=${m.qr}">
+          <span>
+            <span class="lbl">${m.size} ${m.type}</span><br>
+            <span class="sub">${m.vendor} &middot; ${m.unit}</span>
+          </span>
+          <span class="qr">${m.qr}</span>
+        </a>
+      `).join("")}
+    </div>`;
+
+} else if (!machine) {
+  // A code was scanned but it isn't one we know.
+  app.innerHTML = `
+    <div class="card missing">
+      <h1>Machine not found</h1>
+      <p>Tag <strong>${scannedId}</strong> isn't in the register.
+      It may not have been checked in yet.</p>
+    </div>
+    <p class="note"><a href="?">See all machines</a></p>`;
+
+} else {
+  // Found it. Show the machine.
+  app.innerHTML = `
+    <div class="card">
+      <div class="card-top">
+        <div class="code">TAG ${machine.qr}</div>
+        <h1>${machine.size} ${machine.type}</h1>
+        <span class="pill ${machine.status}">${STATUS_LABEL[machine.status]}</span>
+      </div>
+      <dl>
+        <div class="row"><dt>Vendor</dt><dd>${machine.vendor}</dd></div>
+        <div class="row"><dt>Unit no</dt><dd class="mono">${machine.unit}</dd></div>
+        <div class="row"><dt>Serial</dt><dd class="mono">${machine.serial}</dd></div>
+      </dl>
+    </div>
+    <p class="note">
+      Scanning works. Next step is the form that records who is using it and where.
+      <br><a href="?">See all machines</a>
+    </p>`;
+}
+</script>
+</body>
+</html>
