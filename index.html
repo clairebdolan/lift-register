@@ -335,7 +335,7 @@
   <!-- Everything below gets filled in by the script at the bottom. -->
   <div id="app"></div>
 
-  <footer>Prototype — sample data only &middot; <span id="version"></span></footer>
+  <footer>Prototype &middot; <span id="version"></span><span id="pending"></span></footer>
 </div>
 
 <!-- The camera. Hidden until Scan is tapped, then it covers everything.
@@ -427,7 +427,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 14";
+const APP_VERSION = "build 15";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -440,6 +440,11 @@ const APP_VERSION = "build 14";
 // scan in a hall with no signal can be recorded at all. When there is a
 // server, this stays exactly as it is and a sync step gets added on top.
 // ---------------------------------------------------------------------------
+
+// Where scans go when the phone has signal. This is the Apps Script attached
+// to Claire's Google Sheet, published so the app can post to it without a
+// login — which is the whole reason this is on Google and not Microsoft.
+const ENDPOINT = "https://script.google.com/macros/s/AKfycbw8MM_crqCtagSZzM1xXbnSQEhgQg1jc0G1buNIMCbCNa7PQRISLYnbgSVX2SWZmR_0AA/exec";
 
 const SCAN_STORE  = "liftregister.scans";
 const LAST_NAME   = "liftregister.lastname";
@@ -527,8 +532,10 @@ function recordScan(code) {
   localStorage.setItem(LAST_PLACE, placeField.value);
 
   const callOff = document.getElementById("calloff").value === "Yes";
+  const machine = findMachine(code) || {};
 
   const entry = {
+    id: newId(),        // so the sheet can tell a repeat send from a new scan
     qr: code,
     name: name,
     place: placeField.value,
@@ -536,7 +543,16 @@ function recordScan(code) {
     note: note,
     callOff: callOff,
     at: new Date().toISOString(),   // full timestamp, never a local format
-    day: today()
+    day: today(),
+
+    // Carried along so the sheet reads on its own, without anyone having to
+    // look up what tag C8M3 is.
+    desc:   machine.desc   || "",
+    vendor: machine.vendor || "",
+    unit:   machine.unit   || "",
+    serial: machine.serial || "",
+
+    sent: false
   };
 
   const list = readScans();
@@ -545,6 +561,14 @@ function recordScan(code) {
 
   justSaved = entry;   // so the screen can show what was just submitted
   show(code);
+  updatePending();
+  sync();              // if there's signal it goes now; if not, it waits
+}
+
+
+function newId() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return "s-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
 }
 
 function timeOf(scan) {
@@ -748,6 +772,7 @@ function scanListBlock() {
             ${s.day} ${timeOf(s)}</span>
             ${faulty ? `<br><span class="flag">${s.condition}${s.note ? " — " + s.note : ""}</span>` : ""}
             ${s.callOff ? `<br><span class="flag">Call off requested</span>` : ""}
+            ${s.sent ? "" : `<br><span class="meta">waiting to send</span>`}
           </div>`;
       }).join("")}
       <p class="note">
@@ -972,6 +997,80 @@ document.addEventListener("change", event => {
 document.getElementById("cancel").addEventListener("click", closeScanner);
 
 document.getElementById("version").textContent = APP_VERSION;
+
+
+// ---------------------------------------------------------------------------
+// 6. SENDING SCANS TO THE SHEET
+//
+// A scan is written to the phone first and sent second, always. That order is
+// what makes a hall with no signal work: the record exists the moment Submit
+// is pressed, and getting it to the sheet is a separate problem that solves
+// itself later.
+//
+// Nothing is ever deleted from the phone on a failure. The worst case is a
+// scan sitting in the queue until the operator walks out to signal.
+// ---------------------------------------------------------------------------
+
+let sending = false;
+
+async function sync() {
+  if (sending || !navigator.onLine) return;
+
+  const waiting = readScans().filter(scan => !scan.sent);
+  if (!waiting.length) return;
+
+  sending = true;
+
+  try {
+    const response = await fetch(ENDPOINT, {
+      method: "POST",
+      // text/plain on purpose. Sending it as JSON makes the browser ask the
+      // server for permission first, and Apps Script cannot answer that
+      // question — so the scan would never leave the phone.
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ scans: waiting })
+    });
+
+    const result = await response.json();
+    if (!result.ok) return;
+
+    // Mark off only what the sheet actually confirmed.
+    const landed = {};
+    result.saved.forEach(id => { landed[id] = true; });
+
+    const list = readScans();
+    list.forEach(scan => { if (landed[scan.id]) scan.sent = true; });
+    writeScans(list);
+
+  } catch (err) {
+    // No signal, or the sheet is unreachable. The queue keeps them.
+
+  } finally {
+    sending = false;
+    updatePending();
+  }
+}
+
+
+// The count of scans still on the phone. Lives in the footer rather than the
+// page body so it can update without wiping a form somebody is typing into.
+function updatePending() {
+  const waiting = readScans().filter(scan => !scan.sent).length;
+  document.getElementById("pending").textContent =
+    waiting ? " · " + waiting + " waiting to send" : "";
+}
+
+
+updatePending();
+sync();
+
+// Try again whenever the app comes back to the front, or the phone finds
+// signal. Between them, walking out of a hall is enough.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") sync();
+});
+
+window.addEventListener("online", sync);
 </script>
 </body>
 </html>
