@@ -197,6 +197,18 @@
 
   .warn-text { color: var(--warn); font-size: 14px; margin: -8px 0 14px; }
 
+  /* An instruction the operator has to act on, not just information. Sits
+     apart from the form so it doesn't read as another field. */
+  .instruct {
+    margin: -4px 0 20px;
+    padding: 14px 16px;
+    border-radius: 4px;
+    background: var(--good-bg);
+    color: var(--good);
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
   /* A recorded scan that reported a fault. Different colour so it does not
      read as "all good" at a glance. */
   .recorded.flagged { border-left-color: var(--warn); }
@@ -415,7 +427,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 13";
+const APP_VERSION = "build 14";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -514,12 +526,15 @@ function recordScan(code) {
   localStorage.setItem(LAST_NAME, name);
   localStorage.setItem(LAST_PLACE, placeField.value);
 
+  const callOff = document.getElementById("calloff").value === "Yes";
+
   const entry = {
     qr: code,
     name: name,
     place: placeField.value,
     condition: condition,
     note: note,
+    callOff: callOff,
     at: new Date().toISOString(),   // full timestamp, never a local format
     day: today()
   };
@@ -648,7 +663,12 @@ function useBlock(machine) {
         <p class="who">Logged at ${timeOf(justSaved)} &middot; ${justSaved.name}</p>
         <p class="sub">${justSaved.place} &middot; ${justSaved.condition}
         ${justSaved.note ? "&mdash; " + justSaved.note : ""}</p>
-      </div>`;
+      </div>
+      ${justSaved.callOff ? `
+        <div class="instruct">
+          <strong>Call off requested.</strong> Take it to the south loading
+          dock so the vendor can pick it up.
+        </div>` : ""}`;
       // Deliberately nothing else. Logging the same lift again happens by
       // scanning it again, not by the app asking.
   }
@@ -690,6 +710,20 @@ function useBlock(machine) {
         <p class="warn-text" id="faultWarn"></p>
       </div>
 
+      <!-- The operator telling us he is done with it. Worth more than the
+           seven day idle rule, because it is same day and it is from the
+           person who actually knows. -->
+      <label class="flabel" for="calloff">Request call off</label>
+      <select class="finput" id="calloff">
+        <option>No</option>
+        <option>Yes</option>
+      </select>
+
+      <div class="instruct" id="calloffNote" hidden>
+        <strong>Take it to the south loading dock</strong> so the vendor can
+        pick it up. A lift that stays in the hall keeps billing.
+      </div>
+
       <button class="btn" data-record="${machine.qr}">Submit</button>
     </div>`;
 }
@@ -713,6 +747,7 @@ function scanListBlock() {
             <span class="meta">${s.name} &middot; ${s.place} &middot;
             ${s.day} ${timeOf(s)}</span>
             ${faulty ? `<br><span class="flag">${s.condition}${s.note ? " — " + s.note : ""}</span>` : ""}
+            ${s.callOff ? `<br><span class="flag">Call off requested</span>` : ""}
           </div>`;
       }).join("")}
       <p class="note">
@@ -920,13 +955,18 @@ document.addEventListener("click", event => {
   }
 });
 
-// The fault box only exists when the condition calls for it.
 document.addEventListener("change", event => {
-  if (event.target.id !== "condition") return;
+  // The fault box only exists when the condition calls for it.
+  if (event.target.id === "condition") {
+    const wrap = document.getElementById("faultWrap");
+    wrap.hidden = event.target.value !== NEEDS_DETAIL;
+    if (!wrap.hidden) document.getElementById("fault").focus();
+  }
 
-  const wrap = document.getElementById("faultWrap");
-  wrap.hidden = event.target.value !== NEEDS_DETAIL;
-  if (!wrap.hidden) document.getElementById("fault").focus();
+  // Asking for a call off comes with somewhere to put the machine.
+  if (event.target.id === "calloff") {
+    document.getElementById("calloffNote").hidden = event.target.value !== "Yes";
+  }
 });
 
 document.getElementById("cancel").addEventListener("click", closeScanner);
