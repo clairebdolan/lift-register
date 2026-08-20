@@ -261,7 +261,7 @@
   <!-- Everything below gets filled in by the script at the bottom. -->
   <div id="app"></div>
 
-  <footer>Prototype — sample data only</footer>
+  <footer>Prototype — sample data only &middot; <span id="version"></span></footer>
 </div>
 
 <!-- The camera. Hidden until Scan is tapped, then it covers everything.
@@ -326,8 +326,34 @@ const STATUS_LABEL = {
 // ---------------------------------------------------------------------------
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js");
+  navigator.serviceWorker.register("sw.js").then(registration => {
+
+    // An app on the home screen is usually RESUMED, not reloaded — the phone
+    // brings back the screen it had rather than starting over. Nothing in a
+    // resume asks whether there is a new version, which is how a phone ends
+    // up stuck on an old copy with no way out but deleting the icon.
+    //
+    // So every time the app comes back to the front, ask.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") registration.update();
+    });
+  });
+
+  // A new version has taken over. Reload once, so the screen being shown
+  // matches the files now running behind it.
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloading) return;      // a reload triggers this again — only once
+    reloading = true;
+    window.location.reload();
+  });
 }
+
+
+// Shown in the footer. Bump this whenever we push, so a phone can be asked
+// "what does the bottom of your screen say?" instead of guessing whether it
+// has the update.
+const APP_VERSION = "build 5";
 
 // Read the machine code out of the address bar. Null if there isn't one.
 function idFromAddress() {
@@ -555,6 +581,8 @@ document.addEventListener("click", event => {
 });
 
 document.getElementById("cancel").addEventListener("click", stopScan);
+
+document.getElementById("version").textContent = APP_VERSION;
 </script>
 </body>
 </html>
