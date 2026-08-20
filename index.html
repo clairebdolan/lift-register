@@ -415,7 +415,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 10";
+const APP_VERSION = "build 11";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -648,10 +648,9 @@ function useBlock(machine) {
         <p class="who">Logged at ${timeOf(justSaved)} &middot; ${justSaved.name}</p>
         <p class="sub">${justSaved.place} &middot; ${justSaved.condition}
         ${justSaved.note ? "&mdash; " + justSaved.note : ""}</p>
-      </div>
-      <button class="btn secondary" data-again="${machine.qr}">
-        Log this machine again
-      </button>`;
+      </div>`;
+      // Deliberately nothing else. Logging the same lift again happens by
+      // scanning it again, not by the app asking.
   }
 
   // Condition starts at Good every time. Yesterday's fault is not today's
@@ -890,13 +889,6 @@ document.addEventListener("click", event => {
   const record = event.target.closest("[data-record]");
   if (record) recordScan(record.getAttribute("data-record"));
 
-  // "Log this machine again" — a fresh blank form for the same lift. Same
-  // machine, different operator, or moved to another hall.
-  const again = event.target.closest("[data-again]");
-  if (again) {
-    justSaved = null;
-    show(again.getAttribute("data-again"));
-  }
 
   // Testing only. Goes away once scans are being sent somewhere.
   if (event.target.closest("[data-clear]")) {
