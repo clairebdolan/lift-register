@@ -197,6 +197,11 @@
 
   .warn-text { color: var(--warn); font-size: 14px; margin: -8px 0 14px; }
 
+  /* A recorded scan that reported a fault. Different colour so it does not
+     read as "all good" at a glance. */
+  .recorded.flagged { border-left-color: var(--warn); }
+  .scans .flag { color: var(--warn); }
+
   /* The list of what this phone has recorded. Scaffolding, for now — it is
      how you check the thing is working without a server to look at. */
   .scans { margin-top: 30px; }
@@ -410,7 +415,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 8";
+const APP_VERSION = "build 9";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -428,14 +433,34 @@ const SCAN_STORE  = "liftregister.scans";
 const LAST_NAME   = "liftregister.lastname";
 const LAST_PLACE  = "liftregister.lastplace";
 
-// Placeholder until we have the real building. Locations are a fixed list on
-// purpose — free text turns into "hall 2", "H2", "hall two" and stops being
-// countable.
+// The building. A fixed list on purpose — free text turns into "hall 2",
+// "H2" and "hall two" and stops being countable.
+//
+// Kept in the order Claire gave them, which is the order the building is
+// laid out in, not alphabetical. More will be added.
 const LOCATIONS = [
-  "Hall 1", "Hall 2", "Hall 3", "Hall 4",
-  "Gallery A", "Gallery B",
-  "Gen yard", "Laydown yard"
+  "Data Hall 01", "Data Hall 02", "Data Hall 03", "Data Hall 04", "Data Hall 05",
+  "1A", "1B", "1C",
+  "2A", "2B", "2C",
+  "3A", "3B", "3C",
+  "4A", "4B", "4C",
+  "5A", "5B", "5C",
+  "1Y", "2Y",
+  "Data Hall 06", "Data Hall 07", "Data Hall 08", "Data Hall 09", "Data Hall 10",
+  "1D", "1Z", "1E", "1F",
+  "2D", "2Z", "2E", "2F",
+  "3D", "3Z", "3E", "3F",
+  "4D", "4E", "4Z", "4F",
+  "5E", "5F", "5D", "5Z",
+  "ADMIN", "1st Floor Hallway", "2nd Floor Hallway"
 ];
+
+// Condition always starts at Good and is never pre-filled from last time —
+// yesterday's fault is not today's answer.
+const CONDITIONS = ["Good", "Needs Service", "Missing Controller"];
+
+// The one that opens the "what's wrong with it" box.
+const NEEDS_DETAIL = "Needs Service";
 
 function readScans() {
   try {
@@ -468,7 +493,12 @@ function scanFor(code, name) {
 function recordScan(code) {
   const nameField  = document.getElementById("who");
   const placeField = document.getElementById("where");
-  const name = nameField.value.trim();
+  const condField  = document.getElementById("condition");
+  const noteField  = document.getElementById("fault");
+
+  const name      = nameField.value.trim();
+  const condition = condField.value;
+  const note      = noteField ? noteField.value.trim() : "";
 
   if (!name) {
     nameField.focus();
@@ -476,23 +506,48 @@ function recordScan(code) {
     return;
   }
 
-  // Remember both for next time. The whole point of no logins is that the
-  // second scan of the day is one tap.
+  // If someone says it needs service, the useful part is what is wrong with
+  // it. A row saying "Needs Service" and nothing else is a phone call later.
+  if (condition === NEEDS_DETAIL && !note) {
+    noteField.focus();
+    document.getElementById("faultWarn").textContent =
+      "Say what's wrong with it — that is the part that gets it fixed.";
+    return;
+  }
+
+  // Remember these two for next time. The whole point of no logins is that
+  // the second scan of the day is one tap.
   localStorage.setItem(LAST_NAME, name);
   localStorage.setItem(LAST_PLACE, placeField.value);
 
-  if (!scanFor(code, name)) {
-    const list = readScans();
+  const list     = readScans();
+  const existing = list.find(s =>
+    s.qr === code && s.day === today() &&
+    s.name.trim().toLowerCase() === name.toLowerCase()
+  );
+
+  if (existing) {
+    // Already used today, and now they are telling us something changed.
+    // Update the condition rather than adding a second row — the report
+    // wants one line per person, per machine, per day.
+    existing.place     = placeField.value;
+    existing.condition = condition;
+    existing.note      = note;
+    existing.updatedAt = new Date().toISOString();
+  } else {
     list.push({
       qr: code,
       name: name,
       place: placeField.value,
+      condition: condition,
+      note: note,
       at: new Date().toISOString(),   // full timestamp, never a local format
       day: today()
     });
-    writeScans(list);
   }
 
+  writeScans(list);
+  reporting = false;
   show(code);   // redraw — the form is replaced by the confirmation
 }
 
@@ -595,6 +650,10 @@ function show(code) {
 }
 
 
+// True while someone is going back to change the condition on a machine they
+// already recorded today.
+let reporting = false;
+
 // Either the form, or the confirmation if this person already recorded this
 // machine today.
 function useBlock(machine) {
@@ -602,14 +661,26 @@ function useBlock(machine) {
   const lastPlace = localStorage.getItem(LAST_PLACE) || "";
   const already   = lastName ? scanFor(machine.qr, lastName) : null;
 
-  if (already) {
+  if (already && !reporting) {
+    const faulty = already.condition && already.condition !== "Good";
+
     return `
-      <div class="card recorded">
+      <div class="card recorded ${faulty ? "flagged" : ""}">
         <p class="who">Recorded at ${timeOf(already)} &middot; ${already.name}</p>
-        <p class="sub">${already.place}. Already logged for today — scanning
-        it again won't add another.</p>
-      </div>`;
+        <p class="sub">${already.place} &middot; ${already.condition || "Good"}
+        ${already.note ? "&mdash; " + already.note : ""}</p>
+        <p class="sub">Already logged for today. Scanning it again won't add
+        another.</p>
+      </div>
+      <button class="btn secondary" data-report="${machine.qr}">
+        Something's wrong with it
+      </button>`;
   }
+
+  // Condition starts at Good every time, except when someone is coming back
+  // to change it — then show what it is set to now.
+  const condNow = reporting && already ? already.condition : "Good";
+  const noteNow = reporting && already ? (already.note || "") : "";
 
   return `
     <div class="card form">
@@ -619,14 +690,31 @@ function useBlock(machine) {
              autocapitalize="words" spellcheck="false">
       <p class="warn-text" id="nameWarn"></p>
 
-      <label class="flabel" for="where">Where is it</label>
+      <label class="flabel" for="where">Location</label>
       <select class="finput" id="where">
         ${LOCATIONS.map(place => `
           <option ${place === lastPlace ? "selected" : ""}>${place}</option>
         `).join("")}
       </select>
 
-      <button class="btn" data-record="${machine.qr}">Record use</button>
+      <label class="flabel" for="condition">Condition</label>
+      <select class="finput" id="condition">
+        ${CONDITIONS.map(c => `
+          <option ${c === condNow ? "selected" : ""}>${c}</option>
+        `).join("")}
+      </select>
+
+      <!-- Only shown when the condition calls for it. Asking everyone what is
+           wrong with a machine that is fine is how a ten second job becomes a
+           thirty second one. -->
+      <div id="faultWrap" ${condNow === NEEDS_DETAIL ? "" : "hidden"}>
+        <label class="flabel" for="fault">What's wrong with it?</label>
+        <textarea class="finput" id="fault" rows="3"
+                  placeholder="Enough that someone could bring the right part">${noteNow}</textarea>
+        <p class="warn-text" id="faultWarn"></p>
+      </div>
+
+      <button class="btn" data-record="${machine.qr}">Submit</button>
     </div>`;
 }
 
@@ -642,13 +730,19 @@ function scanListBlock() {
       <h2>Recorded on this phone &middot; ${list.length}</h2>
       ${list.slice(0, 12).map(s => {
         const machine = findMachine(s.qr);
+        const faulty  = s.condition && s.condition !== "Good";
         return `
           <div class="entry">
             ${machine ? machine.desc : s.qr}<br>
             <span class="meta">${s.name} &middot; ${s.place} &middot;
             ${s.day} ${timeOf(s)}</span>
+            ${faulty ? `<br><span class="flag">${s.condition}${s.note ? " — " + s.note : ""}</span>` : ""}
           </div>`;
       }).join("")}
+      <p class="note">
+        Nothing is sent anywhere yet — this is on this phone only.
+        <br><a href="#" data-clear>Clear these while testing</a>
+      </p>
     </div>`;
 }
 
@@ -817,6 +911,29 @@ document.addEventListener("click", event => {
 
   const record = event.target.closest("[data-record]");
   if (record) recordScan(record.getAttribute("data-record"));
+
+  // "Something's wrong with it" — bring the form back on a machine that is
+  // already logged for today, so the condition can be changed.
+  const report = event.target.closest("[data-report]");
+  if (report) {
+    reporting = true;
+    show(report.getAttribute("data-report"));
+  }
+
+  // Testing only. Goes away once scans are being sent somewhere.
+  if (event.target.closest("[data-clear]")) {
+    localStorage.removeItem(SCAN_STORE);
+    show(idFromAddress());
+  }
+});
+
+// The fault box only exists when the condition calls for it.
+document.addEventListener("change", event => {
+  if (event.target.id !== "condition") return;
+
+  const wrap = document.getElementById("faultWrap");
+  wrap.hidden = event.target.value !== NEEDS_DETAIL;
+  if (!wrap.hidden) document.getElementById("fault").focus();
 });
 
 document.getElementById("cancel").addEventListener("click", closeScanner);
