@@ -415,7 +415,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 9";
+const APP_VERSION = "build 10";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -480,15 +480,9 @@ function today() {
   return new Date().toLocaleDateString("en-CA");
 }
 
-// The rule: one scan per machine, per person, per day. A second scan of the
-// same machine by the same person is not an error and not a duplicate — it
-// is just already recorded.
-function scanFor(code, name) {
-  const key = (name || "").trim().toLowerCase();
-  return readScans().find(s =>
-    s.qr === code && s.day === today() && s.name.trim().toLowerCase() === key
-  );
-}
+// There is deliberately no rule about scanning the same machine twice.
+// A lift gets handed between operators and moved between halls in a day, and
+// every one of those is a real use worth recording. Every submit is a row.
 
 function recordScan(code) {
   const nameField  = document.getElementById("who");
@@ -520,35 +514,22 @@ function recordScan(code) {
   localStorage.setItem(LAST_NAME, name);
   localStorage.setItem(LAST_PLACE, placeField.value);
 
-  const list     = readScans();
-  const existing = list.find(s =>
-    s.qr === code && s.day === today() &&
-    s.name.trim().toLowerCase() === name.toLowerCase()
-  );
+  const entry = {
+    qr: code,
+    name: name,
+    place: placeField.value,
+    condition: condition,
+    note: note,
+    at: new Date().toISOString(),   // full timestamp, never a local format
+    day: today()
+  };
 
-  if (existing) {
-    // Already used today, and now they are telling us something changed.
-    // Update the condition rather than adding a second row — the report
-    // wants one line per person, per machine, per day.
-    existing.place     = placeField.value;
-    existing.condition = condition;
-    existing.note      = note;
-    existing.updatedAt = new Date().toISOString();
-  } else {
-    list.push({
-      qr: code,
-      name: name,
-      place: placeField.value,
-      condition: condition,
-      note: note,
-      at: new Date().toISOString(),   // full timestamp, never a local format
-      day: today()
-    });
-  }
-
+  const list = readScans();
+  list.push(entry);
   writeScans(list);
-  reporting = false;
-  show(code);   // redraw — the form is replaced by the confirmation
+
+  justSaved = entry;   // so the screen can show what was just submitted
+  show(code);
 }
 
 function timeOf(scan) {
@@ -650,37 +631,33 @@ function show(code) {
 }
 
 
-// True while someone is going back to change the condition on a machine they
-// already recorded today.
-let reporting = false;
+// The entry just submitted, so the screen can confirm it. Cleared as soon as
+// you go anywhere, including scanning the next machine.
+let justSaved = null;
 
-// Either the form, or the confirmation if this person already recorded this
-// machine today.
+// Either the form, or a receipt for what was just submitted.
 function useBlock(machine) {
   const lastName  = localStorage.getItem(LAST_NAME) || "";
   const lastPlace = localStorage.getItem(LAST_PLACE) || "";
-  const already   = lastName ? scanFor(machine.qr, lastName) : null;
 
-  if (already && !reporting) {
-    const faulty = already.condition && already.condition !== "Good";
+  if (justSaved && justSaved.qr === machine.qr) {
+    const faulty = justSaved.condition !== "Good";
 
     return `
       <div class="card recorded ${faulty ? "flagged" : ""}">
-        <p class="who">Recorded at ${timeOf(already)} &middot; ${already.name}</p>
-        <p class="sub">${already.place} &middot; ${already.condition || "Good"}
-        ${already.note ? "&mdash; " + already.note : ""}</p>
-        <p class="sub">Already logged for today. Scanning it again won't add
-        another.</p>
+        <p class="who">Logged at ${timeOf(justSaved)} &middot; ${justSaved.name}</p>
+        <p class="sub">${justSaved.place} &middot; ${justSaved.condition}
+        ${justSaved.note ? "&mdash; " + justSaved.note : ""}</p>
       </div>
-      <button class="btn secondary" data-report="${machine.qr}">
-        Something's wrong with it
+      <button class="btn secondary" data-again="${machine.qr}">
+        Log this machine again
       </button>`;
   }
 
-  // Condition starts at Good every time, except when someone is coming back
-  // to change it — then show what it is set to now.
-  const condNow = reporting && already ? already.condition : "Good";
-  const noteNow = reporting && already ? (already.note || "") : "";
+  // Condition starts at Good every time. Yesterday's fault is not today's
+  // answer, and a pre-filled "Needs Service" gets submitted by accident.
+  const condNow = "Good";
+  const noteNow = "";
 
   return `
     <div class="card form">
@@ -750,6 +727,7 @@ function scanListBlock() {
 // bar is updated to match, so the back button behaves and the address can be
 // shared — but nothing is fetched, which is what keeps this working offline.
 function go(code) {
+  justSaved = null;   // a receipt belongs to the screen it was shown on
   history.pushState({}, "", code ? "?id=" + code : "./");
   show(code);
 }
@@ -912,12 +890,12 @@ document.addEventListener("click", event => {
   const record = event.target.closest("[data-record]");
   if (record) recordScan(record.getAttribute("data-record"));
 
-  // "Something's wrong with it" — bring the form back on a machine that is
-  // already logged for today, so the condition can be changed.
-  const report = event.target.closest("[data-report]");
-  if (report) {
-    reporting = true;
-    show(report.getAttribute("data-report"));
+  // "Log this machine again" — a fresh blank form for the same lift. Same
+  // machine, different operator, or moved to another hall.
+  const again = event.target.closest("[data-again]");
+  if (again) {
+    justSaved = null;
+    show(again.getAttribute("data-again"));
   }
 
   // Testing only. Goes away once scans are being sent somewhere.
