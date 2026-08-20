@@ -14,6 +14,7 @@
     --ink-3: #869092;
     --line: #D3D8D5;
     --accent: #1B6873;
+    --serial: #8A3F2B;
     --good: #2E6B45;
     --good-bg: #DCEBE2;
     --warn: #8A5A17;
@@ -61,14 +62,18 @@
     gap: 10px;
   }
 
+  /* Temporary build-time label — greyed down so it cannot be mistaken for
+     the unit number. Deleted before the field pilot. */
   .code {
     font-family: var(--mono);
-    font-size: 15px;
+    font-size: 12px;
     letter-spacing: 0.1em;
-    color: var(--accent);
+    color: var(--ink-3);
   }
 
-  h1 { font-size: 30px; line-height: 1.1; margin: 0; letter-spacing: -0.02em; }
+  /* Vendor descriptions are long and all-caps, so this is sized to fit one
+     on a phone without wrapping to three lines. */
+  h1 { font-size: 21px; line-height: 1.25; margin: 0; letter-spacing: 0; }
 
   .pill {
     align-self: flex-start;
@@ -84,30 +89,42 @@
   .pill.pickedup   { background: var(--off-bg);  color: var(--off);  }
 
   dl { margin: 0; }
+
+  /* One line per fact, reading "Label: value" left to right.
+     The two number rows carry a coloured bar so a glance tells them apart. */
   .row {
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
     padding: 13px 20px;
     border-bottom: 1px solid var(--line);
+    border-left: 4px solid transparent;
   }
   .row:last-child { border-bottom: none; }
-  .row dt {
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--ink-3);
-    padding-top: 3px;
-    white-space: nowrap;
+  .row.unit   { border-left-color: var(--accent); }
+  .row.serial { border-left-color: var(--serial); }
+
+  .row .k {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--ink-2);
   }
-  .row dd {
-    margin: 0;
-    text-align: right;
-    font-weight: 550;
+  .row .v {
+    font-size: 17px;
+    font-weight: 650;
+    color: var(--ink);
     word-break: break-word;
   }
-  .row dd.mono { font-family: var(--mono); font-size: 15px; font-weight: 500; }
+  .row .v.mono { font-family: var(--mono); font-size: 19px; letter-spacing: 0.02em; }
+  .row.unit   .v { color: var(--accent); }
+  .row.serial .v { color: var(--serial); }
+
+  /* Says where the number comes from, so nobody reads the wrong one off
+     the machine. Colour alone is not enough of a difference. */
+  .row .hint {
+    display: block;
+    margin-top: 3px;
+    font-size: 12.5px;
+    color: var(--ink-3);
+    font-weight: 400;
+  }
 
   .note {
     margin-top: 22px;
@@ -132,7 +149,7 @@
     color: var(--ink);
   }
   .list a:active { background: var(--bg); }
-  .list .lbl { font-weight: 600; }
+  .list .lbl { font-weight: 600; font-size: 15px; }
   .list .sub { font-size: 13px; color: var(--ink-3); }
   .list .qr { font-family: var(--mono); font-size: 14px; color: var(--accent); }
 
@@ -169,15 +186,18 @@
 //
 // Fake machines for testing. Later this comes from a real database; for now
 // it's just a list written into the page. "qr" is the code printed on the tag.
+//
+// "desc" is deliberately the vendor's own wording, copied off the rental
+// agreement, so what the operator sees matches what shows up on the invoice.
 // ---------------------------------------------------------------------------
 
 const MACHINES = [
-  { qr: "A4X7", unit: "SBL-1044821", serial: "GS4390-181422", vendor: "Sunbelt",         type: "Scissor lift", size: "43 ft", status: "active"    },
-  { qr: "B2K9", unit: "UR-7719340",  serial: "GS3246-905118", vendor: "United Rentals",  type: "Scissor lift", size: "32 ft", status: "active"    },
-  { qr: "C8M3", unit: "SBL-1044977", serial: "S60XC-330281",  vendor: "Sunbelt",         type: "Boom lift",    size: "60 ft", status: "active"    },
-  { qr: "D5R1", unit: "HRC-4420118", serial: "GS1930-772904", vendor: "Herc",            type: "Scissor lift", size: "19 ft", status: "calledoff" },
-  { qr: "E7T4", unit: "UR-7719512",  serial: "Z45-25J-118773",vendor: "United Rentals",  type: "Boom lift",    size: "45 ft", status: "active"    },
-  { qr: "F1W8", unit: "HRC-4420663", serial: "GS4047-661209", vendor: "Herc",            type: "Scissor lift", size: "40 ft", status: "pickedup"  }
+  { qr: "A4X7", desc: "MANLIFT-25' SELF PROP ELECTRIC",     vendor: "Sunstate",        unit: "1044821",   serial: "GS2632-181422",  status: "active"    },
+  { qr: "B2K9", desc: "SCISSORLIFT-32' ELECTRIC NARROW",    vendor: "United Rentals",  unit: "7719340",   serial: "GS3246-905118",  status: "active"    },
+  { qr: "C8M3", desc: "BOOMLIFT-60' TELESCOPIC 4WD DIESEL", vendor: "Texas First",     unit: "TF-40218",  serial: "S60XC-330281",   status: "active"    },
+  { qr: "D5R1", desc: "SCISSORLIFT-19' ELECTRIC",           vendor: "Equipment Share", unit: "4420118",   serial: "GS1930-772904",  status: "calledoff" },
+  { qr: "E7T4", desc: "BOOMLIFT-45' ARTICULATING DIESEL",   vendor: "Opifex",          unit: "OPX-11877", serial: "Z45-25J-118773", status: "active"    },
+  { qr: "F1W8", desc: "SCISSORLIFT-40' RT DIESEL",          vendor: "Sunstate",        unit: "1044977",   serial: "GS4047-661209",  status: "pickedup"  }
 ];
 
 // Friendly wording for each status code.
@@ -221,7 +241,7 @@ if (!scannedId) {
       ${MACHINES.map(m => `
         <a href="?id=${m.qr}">
           <span>
-            <span class="lbl">${m.size} ${m.type}</span><br>
+            <span class="lbl">${m.desc}</span><br>
             <span class="sub">${m.vendor} &middot; ${m.unit}</span>
           </span>
           <span class="qr">${m.qr}</span>
@@ -244,14 +264,29 @@ if (!scannedId) {
   app.innerHTML = `
     <div class="card">
       <div class="card-top">
+        <!-- TODO before the field pilot: DELETE this tag code line.
+             It is here only while we are building, so we can tell which
+             sample machine we are looking at. An operator has no use for it
+             and it will get confused with the unit number. -->
         <div class="code">TAG ${machine.qr}</div>
-        <h1>${machine.size} ${machine.type}</h1>
+        <h1>${machine.desc}</h1>
         <span class="pill ${machine.status}">${STATUS_LABEL[machine.status]}</span>
       </div>
       <dl>
-        <div class="row"><dt>Vendor</dt><dd>${machine.vendor}</dd></div>
-        <div class="row"><dt>Unit no</dt><dd class="mono">${machine.unit}</dd></div>
-        <div class="row"><dt>Serial</dt><dd class="mono">${machine.serial}</dd></div>
+        <div class="row">
+          <span class="k">Vendor:</span>
+          <span class="v">${machine.vendor}</span>
+        </div>
+        <div class="row unit">
+          <span class="k">Unit Number:</span>
+          <span class="v mono">${machine.unit}</span>
+          <span class="hint">The vendor's sticker number — what they bill against</span>
+        </div>
+        <div class="row serial">
+          <span class="k">Serial Number:</span>
+          <span class="v mono">${machine.serial}</span>
+          <span class="hint">Stamped on the machine's plate — never changes</span>
+        </div>
       </dl>
     </div>
     <p class="note">
