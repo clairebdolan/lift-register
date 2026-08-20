@@ -353,7 +353,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 6";
+const APP_VERSION = "build 7";
 
 // Read the machine code out of the address bar. Null if there isn't one.
 function idFromAddress() {
@@ -481,26 +481,40 @@ const scanmsg = document.getElementById("scanmsg");
 const canvas = document.createElement("canvas");
 const ctx    = canvas.getContext("2d", { willReadFrequently: true });
 
-let stream  = null;    // the live camera feed, kept so it can be shut off
+let stream  = null;    // the live camera feed, kept between scans
 let looking = false;   // true while the decode loop should keep running
+let handBack = null;   // countdown to giving the camera back
+
+// How long to keep hold of the camera after the scanner is closed. Long
+// enough to cover walking to the next machine, short enough that the phone
+// is not sitting there with the camera on all afternoon.
+const HOLD_CAMERA_FOR = 2 * 60 * 1000;
 
 async function startScan() {
   scanner.hidden = false;
-  scanmsg.textContent = "Starting the camera…";
+  clearTimeout(handBack);
 
-  try {
-    // "environment" is the back camera. ideal rather than exact, so a device
-    // with only one camera gives us that one instead of refusing.
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } }
-    });
-  } catch (err) {
-    scanmsg.textContent =
-      "No camera access. Allow the camera for this app in your phone settings, then try again.";
-    return;
+  // Asking for the camera is what makes the phone put up its permission
+  // prompt. Somebody scanning six machines should be asked once, not six
+  // times — so if we still have the camera from the last scan, reuse it.
+  if (!stream || !stream.active) {
+    scanmsg.textContent = "Starting the camera…";
+
+    try {
+      // "environment" is the back camera. ideal rather than exact, so a device
+      // with only one camera gives us that one instead of refusing.
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } }
+      });
+    } catch (err) {
+      scanmsg.textContent =
+        "No camera access. Allow the camera for this app in your phone settings, then try again.";
+      return;
+    }
+
+    video.srcObject = stream;
   }
 
-  video.srcObject = stream;
   await video.play();
 
   scanmsg.textContent = "Point the camera at the tag";
@@ -508,18 +522,35 @@ async function startScan() {
   requestAnimationFrame(look);
 }
 
-function stopScan() {
+// Close the overlay and stop reading frames, but keep the camera itself for
+// a couple of minutes in case the next machine is right there.
+function closeScanner() {
   looking = false;
   scanner.hidden = true;
+  video.pause();
 
-  // Let go of the camera. Without this the light stays on and the phone keeps
-  // burning battery after the overlay is gone.
+  clearTimeout(handBack);
+  handBack = setTimeout(releaseCamera, HOLD_CAMERA_FOR);
+}
+
+// Actually give the camera back. Until this runs the phone shows its camera
+// indicator and burns battery, so it needs to happen on its own — nobody is
+// going to remember to close anything.
+function releaseCamera() {
+  clearTimeout(handBack);
+
   if (stream) {
     stream.getTracks().forEach(track => track.stop());
     stream = null;
   }
   video.srcObject = null;
 }
+
+// Leaving the app hands the camera back immediately. Holding it while the
+// phone is in someone's pocket would be indefensible.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") releaseCamera();
+});
 
 function look() {
   if (!looking) return;
@@ -544,7 +575,7 @@ function look() {
     if (found) {
       const code = codeFromScan(found.data);
       if (code) {
-        stopScan();
+        closeScanner();
         go(code);
         return;
       }
@@ -580,7 +611,7 @@ document.addEventListener("click", event => {
   if (event.target.closest("[data-scan]")) startScan();
 });
 
-document.getElementById("cancel").addEventListener("click", stopScan);
+document.getElementById("cancel").addEventListener("click", closeScanner);
 
 document.getElementById("version").textContent = APP_VERSION;
 </script>
