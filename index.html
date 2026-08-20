@@ -159,6 +159,90 @@
   .missing h1 { font-size: 22px; margin-bottom: 8px; }
   .missing p { color: var(--ink-2); font-size: 15px; margin: 0; }
 
+  /* Big primary action. Sized for a thumb in a glove, not a mouse. */
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 17px;
+    margin-bottom: 18px;
+    border: none;
+    border-radius: 4px;
+    background: var(--accent);
+    color: #fff;
+    font-family: inherit;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .btn:active { background: #14525B; }
+  .btn.secondary {
+    margin-top: 18px;
+    margin-bottom: 0;
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--line);
+  }
+
+  /* ---- camera overlay ----------------------------------------------------
+     Covers the whole screen while scanning. Black, because anything else
+     competes with the camera picture for attention. */
+  .scanner {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .scanner[hidden] { display: none; }
+
+  .scanner video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* The square you aim with. It is only a hint — the decoder reads the whole
+     picture, not just what is inside the box. */
+  .frame {
+    position: relative;
+    width: 68vw;
+    max-width: 300px;
+    aspect-ratio: 1;
+    border: 3px solid rgba(255,255,255,0.9);
+    border-radius: 10px;
+    box-shadow: 0 0 0 100vmax rgba(0,0,0,0.45);
+  }
+
+  .scanmsg {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 104px;
+    margin: 0;
+    padding: 0 24px;
+    text-align: center;
+    color: #fff;
+    font-size: 16px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+  }
+
+  .cancel {
+    position: absolute;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 14px 34px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.5);
+    background: rgba(0,0,0,0.35);
+    color: #fff;
+    font-family: inherit;
+    font-size: 17px;
+  }
+
   footer {
     margin-top: 34px;
     font-family: var(--mono);
@@ -179,6 +263,20 @@
 
   <footer>Prototype — sample data only</footer>
 </div>
+
+<!-- The camera. Hidden until Scan is tapped, then it covers everything.
+     playsinline matters: without it an iPhone takes the video full screen in
+     its own player and the app never gets to look at the picture. -->
+<div class="scanner" id="scanner" hidden>
+  <video id="video" playsinline muted></video>
+  <div class="frame"></div>
+  <p class="scanmsg" id="scanmsg">Point the camera at the tag</p>
+  <button class="cancel" id="cancel">Cancel</button>
+</div>
+
+<!-- The QR decoder. A copy lives in this folder rather than being fetched
+     from someone else's server, so it still works with no signal. -->
+<script src="jsQR.js"></script>
 
 <script>
 // ---------------------------------------------------------------------------
@@ -231,85 +329,232 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js");
 }
 
-
-const scannedId = new URLSearchParams(window.location.search).get("id");
+// Read the machine code out of the address bar. Null if there isn't one.
+function idFromAddress() {
+  return new URLSearchParams(window.location.search).get("id");
+}
 
 // Look through the list for a machine whose qr code matches.
-// toUpperCase() so a lowercase ?id=a4x7 still works.
-const machine = MACHINES.find(m => m.qr === (scannedId || "").toUpperCase());
+// toUpperCase() so a lowercase a4x7 still works.
+function findMachine(code) {
+  return MACHINES.find(m => m.qr === (code || "").toUpperCase());
+}
 
 
 // ---------------------------------------------------------------------------
 // 3. PUT SOMETHING ON THE SCREEN
 //
+// show() runs on load, after a scan, and when the back button is used.
 // Three possible situations, handled in order.
 // ---------------------------------------------------------------------------
 
 const app = document.getElementById("app");
 
-if (!scannedId) {
-  // Nothing was scanned — someone opened the plain address.
-  // Show the test list so you can tap through without a printed tag.
-  app.innerHTML = `
-    <p class="lede">No machine scanned. Pick one to preview what an operator
-    sees after scanning its tag.</p>
-    <div class="list">
-      ${MACHINES.map(m => `
-        <a href="?id=${m.qr}">
-          <span>
-            <span class="lbl">${m.desc}</span><br>
-            <span class="sub">${m.vendor} &middot; ${m.unit}</span>
-          </span>
-          <span class="qr">${m.qr}</span>
-        </a>
-      `).join("")}
-    </div>`;
+function show(code) {
+  const machine = findMachine(code);
 
-} else if (!machine) {
-  // A code was scanned but it isn't one we know.
-  app.innerHTML = `
-    <div class="card missing">
-      <h1>Machine not found</h1>
-      <p>Tag <strong>${scannedId}</strong> isn't in the register.
-      It may not have been checked in yet.</p>
-    </div>
-    <p class="note"><a href="?">See all machines</a></p>`;
+  if (!code) {
+    // Nothing scanned — someone opened the plain address.
+    // The list below is scaffolding for testing without a printed tag.
+    app.innerHTML = `
+      <button class="btn" data-scan>Scan a tag</button>
+      <p class="lede">Or pick one to preview what an operator sees after
+      scanning its tag.</p>
+      <div class="list">
+        ${MACHINES.map(m => `
+          <a href="?id=${m.qr}">
+            <span>
+              <span class="lbl">${m.desc}</span><br>
+              <span class="sub">${m.vendor} &middot; ${m.unit}</span>
+            </span>
+            <span class="qr">${m.qr}</span>
+          </a>
+        `).join("")}
+      </div>`;
 
-} else {
-  // Found it. Show the machine.
-  app.innerHTML = `
-    <div class="card">
-      <div class="card-top">
-        <!-- TODO before the field pilot: DELETE this tag code line.
-             It is here only while we are building, so we can tell which
-             sample machine we are looking at. An operator has no use for it
-             and it will get confused with the unit number. -->
-        <div class="code">TAG ${machine.qr}</div>
-        <h1>${machine.desc}</h1>
-        <span class="pill ${machine.status}">${STATUS_LABEL[machine.status]}</span>
+  } else if (!machine) {
+    // A code came back but it isn't one we know.
+    app.innerHTML = `
+      <div class="card missing">
+        <h1>Machine not found</h1>
+        <p>Tag <strong>${code}</strong> isn't in the register.
+        It may not have been checked in yet.</p>
       </div>
-      <dl>
-        <div class="row">
-          <span class="k">Vendor:</span>
-          <span class="v">${machine.vendor}</span>
+      <button class="btn secondary" data-scan>Scan another tag</button>
+      <p class="note"><a href="?">See all machines</a></p>`;
+
+  } else {
+    // Found it. Show the machine.
+    app.innerHTML = `
+      <div class="card">
+        <div class="card-top">
+          <!-- TODO before the field pilot: DELETE this tag code line.
+               It is here only while we are building, so we can tell which
+               sample machine we are looking at. An operator has no use for it
+               and it will get confused with the unit number. -->
+          <div class="code">TAG ${machine.qr}</div>
+          <h1>${machine.desc}</h1>
+          <span class="pill ${machine.status}">${STATUS_LABEL[machine.status]}</span>
         </div>
-        <div class="row unit">
-          <span class="k">Unit Number:</span>
-          <span class="v mono">${machine.unit}</span>
-          <span class="hint">The vendor's sticker number</span>
-        </div>
-        <div class="row serial">
-          <span class="k">Serial Number:</span>
-          <span class="v mono">${machine.serial}</span>
-          <span class="hint">Stamped on the machine's plate</span>
-        </div>
-      </dl>
-    </div>
-    <p class="note">
-      Scanning works. Next step is the form that records who is using it and where.
-      <br><a href="?">See all machines</a>
-    </p>`;
+        <dl>
+          <div class="row">
+            <span class="k">Vendor:</span>
+            <span class="v">${machine.vendor}</span>
+          </div>
+          <div class="row unit">
+            <span class="k">Unit Number:</span>
+            <span class="v mono">${machine.unit}</span>
+            <span class="hint">The vendor's sticker number</span>
+          </div>
+          <div class="row serial">
+            <span class="k">Serial Number:</span>
+            <span class="v mono">${machine.serial}</span>
+            <span class="hint">Stamped on the machine's plate</span>
+          </div>
+        </dl>
+      </div>
+      <button class="btn secondary" data-scan>Scan another tag</button>
+      <p class="note">
+        Scanning works. Next step is the form that records who is using it and where.
+        <br><a href="?">See all machines</a>
+      </p>`;
+  }
 }
+
+// Change which machine is on screen without reloading the page. The address
+// bar is updated to match, so the back button behaves and the address can be
+// shared — but nothing is fetched, which is what keeps this working offline.
+function go(code) {
+  history.pushState({}, "", code ? "?id=" + code : "./");
+  show(code);
+}
+
+// Draw whatever the address bar says, now and whenever the back button moves.
+show(idFromAddress());
+window.addEventListener("popstate", () => show(idFromAddress()));
+
+
+// ---------------------------------------------------------------------------
+// 4. THE SCANNER
+//
+// The phone's own camera app can read these tags, but it hands the address to
+// the browser, which then needs a signal. Reading the code inside the app
+// keeps the whole thing on the phone.
+//
+// How it works: run the camera into a hidden video element, copy one frame at
+// a time onto a hidden canvas, and hand that picture to jsQR to ask "is there
+// a code in here?" About thirty times a second, until the answer is yes.
+// ---------------------------------------------------------------------------
+
+const scanner = document.getElementById("scanner");
+const video   = document.getElementById("video");
+const scanmsg = document.getElementById("scanmsg");
+
+// Never added to the page — it exists only as somewhere to put a frame so the
+// pixels can be read back out.
+const canvas = document.createElement("canvas");
+const ctx    = canvas.getContext("2d", { willReadFrequently: true });
+
+let stream  = null;    // the live camera feed, kept so it can be shut off
+let looking = false;   // true while the decode loop should keep running
+
+async function startScan() {
+  scanner.hidden = false;
+  scanmsg.textContent = "Starting the camera…";
+
+  try {
+    // "environment" is the back camera. ideal rather than exact, so a device
+    // with only one camera gives us that one instead of refusing.
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } }
+    });
+  } catch (err) {
+    scanmsg.textContent =
+      "No camera access. Allow the camera for this app in your phone settings, then try again.";
+    return;
+  }
+
+  video.srcObject = stream;
+  await video.play();
+
+  scanmsg.textContent = "Point the camera at the tag";
+  looking = true;
+  requestAnimationFrame(look);
+}
+
+function stopScan() {
+  looking = false;
+  scanner.hidden = true;
+
+  // Let go of the camera. Without this the light stays on and the phone keeps
+  // burning battery after the overlay is gone.
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+  video.srcObject = null;
+}
+
+function look() {
+  if (!looking) return;
+
+  // Wait until the camera is actually producing frames.
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+
+    // Shrink the frame on the way in. A full resolution phone picture is
+    // millions of pixels and this runs thirty times a second; a code big
+    // enough for a person to aim at is still readable at this size.
+    const width  = 480;
+    const height = Math.round(video.videoHeight * (width / video.videoWidth));
+    canvas.width  = width;
+    canvas.height = height;
+    ctx.drawImage(video, 0, 0, width, height);
+
+    const picture = ctx.getImageData(0, 0, width, height);
+    const found = jsQR(picture.data, picture.width, picture.height, {
+      inversionAttempts: "dontInvert"
+    });
+
+    if (found) {
+      const code = codeFromScan(found.data);
+      if (code) {
+        stopScan();
+        go(code);
+        return;
+      }
+      // Something scanned, but not one of ours. Keep looking.
+      scanmsg.textContent = "That isn't a Lift Register tag.";
+    }
+  }
+
+  requestAnimationFrame(look);
+}
+
+// A tag holds a web address ending in ?id=A4X7. A hand-made test tag might
+// hold just the four characters. Accept either and reject anything else — a
+// shipping label or a vendor's own QR should not open a machine.
+function codeFromScan(text) {
+  try {
+    const address = new URL(text, window.location.href);
+    const id = address.searchParams.get("id");
+    if (id) return id.toUpperCase();
+  } catch (err) {
+    // Not a web address. Fall through and try it as a bare code.
+  }
+
+  const bare = text.trim().toUpperCase();
+  return /^[A-Z0-9]{4}$/.test(bare) ? bare : null;
+}
+
+
+// Any Scan button, anywhere on the page. Written this way because the buttons
+// are created and destroyed every time the screen redraws, so we listen on
+// the page itself rather than on a button that might not exist yet.
+document.addEventListener("click", event => {
+  if (event.target.closest("[data-scan]")) startScan();
+});
+
+document.getElementById("cancel").addEventListener("click", stopScan);
 </script>
 </body>
 </html>
