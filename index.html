@@ -427,7 +427,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 15";
+const APP_VERSION = "build 16";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -690,8 +690,8 @@ function useBlock(machine) {
       </div>
       ${justSaved.callOff ? `
         <div class="instruct">
-          <strong>Call off requested.</strong> Take it to the south loading
-          dock so the vendor can pick it up.
+          Take it to the south loading dock so the logistics team can get it
+          out of the building and ready for pick up.
         </div>` : ""}`;
       // Deliberately nothing else. Logging the same lift again happens by
       // scanning it again, not by the app asking.
@@ -744,8 +744,8 @@ function useBlock(machine) {
       </select>
 
       <div class="instruct" id="calloffNote" hidden>
-        <strong>Take it to the south loading dock</strong> so the vendor can
-        pick it up. A lift that stays in the hall keeps billing.
+        Take it to the south loading dock so the logistics team can get it out
+        of the building and ready for pick up.
       </div>
 
       <button class="btn" data-record="${machine.qr}">Submit</button>
