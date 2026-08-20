@@ -216,6 +216,22 @@ const STATUS_LABEL = {
 // If there's no id in the address, scannedId is null.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// OFFLINE
+//
+// Hand sw.js to the phone. From here on the phone keeps its own copy of this
+// app and can open it with no signal. This is the only line index.html needs
+// — everything about what gets stored lives in sw.js.
+//
+// The "if" is there because a browser that has never heard of service workers
+// should still show the app, just without the offline part.
+// ---------------------------------------------------------------------------
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js");
+}
+
+
 const scannedId = new URLSearchParams(window.location.search).get("id");
 
 // Look through the list for a machine whose qr code matches.
