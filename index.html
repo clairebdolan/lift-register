@@ -415,7 +415,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 11";
+const APP_VERSION = "build 12";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -761,6 +761,16 @@ let stream  = null;    // the live camera feed, kept between scans
 let looking = false;   // true while the decode loop should keep running
 let handBack = null;   // countdown to giving the camera back
 
+// Because the camera is kept between scans, the video element still holds the
+// last frame it saw — which is the frame with a code in it, since that is what
+// ended the scan. Without this the next scan reads that stale picture and
+// jumps to the same machine with the phone pointed at the floor.
+let freshFrom = -1;
+
+// Belt and braces: ignore the same code twice in quick succession.
+let lastCode = null;
+let lastCodeAt = 0;
+
 // How long to keep hold of the camera after the scanner is closed. Long
 // enough to cover walking to the next machine, short enough that the phone
 // is not sitting there with the camera on all afternoon.
@@ -792,6 +802,10 @@ async function startScan() {
   }
 
   await video.play();
+
+  // Anything the video is already holding is from last time. Only frames
+  // after this moment count.
+  freshFrom = video.currentTime;
 
   scanmsg.textContent = "Point the camera at the tag";
   looking = true;
@@ -831,8 +845,9 @@ document.addEventListener("visibilitychange", () => {
 function look() {
   if (!looking) return;
 
-  // Wait until the camera is actually producing frames.
-  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+  // Wait until the camera is actually producing frames, and until those
+  // frames are newer than the moment this scan started.
+  if (video.readyState === video.HAVE_ENOUGH_DATA && video.currentTime > freshFrom) {
 
     // Shrink the frame on the way in. A full resolution phone picture is
     // millions of pixels and this runs thirty times a second; a code big
@@ -850,7 +865,15 @@ function look() {
 
     if (found) {
       const code = codeFromScan(found.data);
-      if (code) {
+      const now  = Date.now();
+
+      // The same tag a second after the last one is the camera catching a tag
+      // still sitting in front of it, not a person scanning again.
+      const echo = code && code === lastCode && now - lastCodeAt < 1500;
+
+      if (code && !echo) {
+        lastCode   = code;
+        lastCodeAt = now;
         closeScanner();
         go(code);
         return;
