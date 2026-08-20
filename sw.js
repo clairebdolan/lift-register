@@ -15,7 +15,7 @@
 // The name of the storage container on the phone. Change the version number
 // whenever the file list below changes — the phone treats a new name as a
 // brand new container and throws the old one out.
-const CACHE = "lift-register-v2";
+const CACHE = "lift-register-v3";
 
 // The files the app needs in order to start at all.
 const SHELL = [
@@ -33,7 +33,12 @@ const SHELL = [
 self.addEventListener("install", event => {
   // waitUntil means "do not call the install finished until this is done."
   event.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(SHELL))
+    caches.open(CACHE).then(cache =>
+      // "reload" means go to the server, do not accept a copy the browser is
+      // already holding. GitHub tells browsers a file is good for ten minutes,
+      // so without this an install can stash a version that is already old.
+      cache.addAll(SHELL.map(file => new Request(file, { cache: "reload" })))
+    )
   );
 
   // Normally a new service worker waits until every old tab is closed before
@@ -99,7 +104,10 @@ async function serveApp() {
   const cache = await caches.open(CACHE);
   const stored = await cache.match("./index.html");
 
-  const fromNetwork = fetch("./index.html")
+  // Same reason as above: the background refresh has to actually reach the
+  // server, or the app can sit on an old version for ten minutes after a
+  // change was pushed and look like updating is broken.
+  const fromNetwork = fetch(new Request("./index.html", { cache: "reload" }))
     .then(response => {
       if (response && response.ok) cache.put("./index.html", response.clone());
       return response;
