@@ -15,7 +15,7 @@
 // The name of the storage container on the phone. Change the version number
 // whenever the file list below changes — the phone treats a new name as a
 // brand new container and throws the old one out.
-const CACHE = "lift-register-v4";
+const CACHE = "lift-register-v5";
 
 // The files the app needs in order to start at all.
 const SHELL = [
@@ -23,7 +23,6 @@ const SHELL = [
   "./index.html",
   "./jsQR.js",     // the decoder, so scanning works with no signal
   "./manifest.json",
-  "./icon-180.png",
   "./icon-512.png"
 ];
 
