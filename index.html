@@ -509,7 +509,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 35";
+const APP_VERSION = "build 36";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -967,6 +967,16 @@ function readSheetMachines() {
 // Machines tagged on this phone are added on top until the sheet comes back
 // carrying them, which stops a lift from vanishing in the minutes between
 // registering it and the sheet catching up.
+// A lift this phone is carrying that the sheet has never confirmed. Usually
+// it means no signal yet. Occasionally it means something went wrong on the
+// way, and then somebody needs to be able to throw it away.
+function onlyOnThisPhone(code) {
+  const mine    = readLocalMachines().some(m => m.qr === code);
+  const inSheet = readSheetMachines().some(m => m.qr === code);
+  return mine && !inSheet;
+}
+
+
 function register() {
   const fromSheet = readSheetMachines();
 
@@ -1232,7 +1242,12 @@ function show(code) {
         </dl>
       </div>
       ${useBlock(machine)}
-      <button class="btn secondary" data-scan>Scan another tag</button>`;
+      <button class="btn secondary" data-scan>Scan another tag</button>
+      ${onlyOnThisPhone(machine.qr) ? `
+        <p class="note">
+          This lift is on this phone only — it hasn't reached the sheet yet.
+          <br><a href="#" data-forget="${machine.qr}">Remove it from this phone</a>
+        </p>` : ""}`;
   }
 }
 
@@ -1445,7 +1460,7 @@ function drawLifts() {
         <a href="?id=${m.qr}" data-go="${m.qr}">
           <span>
             <span class="lbl">${m.desc}</span><br>
-            <span class="sub">Vendor: ${m.vendor}<br>Unit #${m.unit}<br>Job #: ${m.job}</span>
+            <span class="sub">Vendor: ${m.vendor}<br>Unit #${m.unit}<br>Job #: ${m.job}${onlyOnThisPhone(m.qr) ? "<br>On this phone only" : ""}</span>
           </span>
         </a>
       `).join("")}
@@ -1671,6 +1686,22 @@ document.addEventListener("click", event => {
   if (event.target.closest("[data-request]")) {
     event.preventDefault();
     go(REQUEST);
+  }
+
+  // Throw away a machine this phone is carrying that never made it. Asked
+  // about first, because on a phone in a hall this could be a real lift
+  // somebody registered an hour ago.
+  const forget = event.target.closest("[data-forget]");
+  if (forget) {
+    event.preventDefault();
+    const code = forget.getAttribute("data-forget");
+
+    if (!confirm("Remove " + code + " from this phone? It has not reached the sheet, so it will be gone.")) return;
+
+    const kept = readLocalMachines().filter(m => m.qr !== code);
+    localStorage.setItem(LOCAL_MACHINES, JSON.stringify(kept));
+    updatePending();
+    go(ALL_LIFTS);
   }
 
   if (event.target.closest("[data-sendrequest]")) {
