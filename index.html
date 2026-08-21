@@ -509,7 +509,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 39";
+const APP_VERSION = "build 40";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -540,20 +540,58 @@ const LAST_PROJ   = "liftregister.lastproject";
 // laid out in, not alphabetical. More will be added.
 const LOCATIONS = [
   "Data Hall 01", "Data Hall 02", "Data Hall 03", "Data Hall 04", "Data Hall 05",
-  "1A", "1B", "1C",
-  "2A", "2B", "2C",
-  "3A", "3B", "3C",
-  "4A", "4B", "4C",
-  "5A", "5B", "5C",
-  "1Y", "2Y",
+  "UPS 1A", "UPS 1B", "UPS 1C",
+  "UPS 2A", "UPS 2B", "UPS 2C",
+  "UPS 3A", "UPS 3B", "UPS 3C",
+  "UPS 4A", "UPS 4B", "UPS 4C",
+  "UPS 5A", "UPS 5B", "UPS 5C",
+  "UPS 1Y", "UPS 2Y",
   "Data Hall 06", "Data Hall 07", "Data Hall 08", "Data Hall 09", "Data Hall 10",
-  "1D", "1Z", "1E", "1F",
-  "2D", "2Z", "2E", "2F",
-  "3D", "3Z", "3E", "3F",
-  "4D", "4E", "4Z", "4F",
-  "5E", "5F", "5D", "5Z",
+  "UPS 1D", "UPS 1Z", "UPS 1E", "UPS 1F",
+  "UPS 2D", "UPS 2Z", "UPS 2E", "UPS 2F",
+  "UPS 3D", "UPS 3Z", "UPS 3E", "UPS 3F",
+  "UPS 4D", "UPS 4E", "UPS 4Z", "UPS 4F",
+  "UPS 5E", "UPS 5F", "UPS 5D", "UPS 5Z",
   "ADMIN", "1st Floor Hallway", "2nd Floor Hallway"
 ];
+
+// The last few locations used on this phone, newest first.
+//
+// A man works one hall all week. Making him scroll past forty rooms to find
+// the one he was in an hour ago is the friction that turns a ten second job
+// into one people skip.
+const RECENT_PLACES = "liftregister.recentplaces";
+
+function readRecentPlaces() {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_PLACES)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function rememberPlace(place) {
+  if (!place) return;
+
+  const recent = readRecentPlaces().filter(p => p !== place);
+  recent.unshift(place);
+  localStorage.setItem(RECENT_PLACES, JSON.stringify(recent.slice(0, 3)));
+}
+
+// The dropdown: recent ones at the top, then the building in its own order.
+function locationOptions(selected) {
+  const recent = readRecentPlaces().filter(p => LOCATIONS.includes(p));
+
+  const group = (label, places) => !places.length ? "" : `
+    <optgroup label="${label}">
+      ${places.map(p => `
+        <option ${p === selected ? "selected" : ""}>${p}</option>
+      `).join("")}
+    </optgroup>`;
+
+  return group("Recent", recent) + group("All locations", LOCATIONS);
+}
+
 
 // The jobs on this site. A lift is rented to one of them; the crew using it
 // is sometimes from another, which is exactly what we want to catch.
@@ -617,6 +655,7 @@ function recordScan(code) {
   // second scan of the day is one tap.
   localStorage.setItem(LAST_NAME, name);
   localStorage.setItem(LAST_PLACE, placeField.value);
+  rememberPlace(placeField.value);
   localStorage.setItem(LAST_PROJ, document.getElementById("project").value);
 
   const callOff = document.getElementById("calloff").value === "Yes";
@@ -968,6 +1007,26 @@ function readSheetMachines() {
 // Machines tagged on this phone are added on top until the sheet comes back
 // carrying them, which stops a lift from vanishing in the minutes between
 // registering it and the sheet catching up.
+// When this machine was last scanned, and by whom. Comes from the sheet, so
+// it is what the whole job has done, not just this phone.
+//
+// This is the line that tells a foreman whether a lift is genuinely finished
+// with before he calls it off.
+function lastScanText(machine) {
+  if (!machine.lastScan) return "Never scanned";
+
+  const when = new Date(machine.lastScan);
+  if (isNaN(when.getTime())) return "Never scanned";
+
+  const shown = when.toLocaleString([], {
+    weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit"
+  });
+
+  return machine.lastScanBy ? shown + " by " + machine.lastScanBy : shown;
+}
+
+
 // A lift this phone is carrying that the sheet has never confirmed. Usually
 // it means no signal yet. Occasionally it means something went wrong on the
 // way, and then somebody needs to be able to throw it away.
@@ -1181,7 +1240,7 @@ function show(code) {
         ${PROJECTS.map(j => `<option>${j}</option>`).join("")}
       </select>
       <input class="find" id="find" type="search" autocomplete="off"
-             placeholder="Search by unit number" autocapitalize="characters">
+             placeholder="Search by unit or serial number" autocapitalize="characters">
       <div id="lifts"></div>`;
 
     drawLifts();
@@ -1223,11 +1282,6 @@ function show(code) {
       <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
       <div class="card">
         <div class="card-top">
-          <!-- TODO before the field pilot: DELETE this tag code line.
-               It is here only while we are building, so we can tell which
-               sample machine we are looking at. An operator has no use for it
-               and it will get confused with the unit number. -->
-          <div class="code">TAG ${machine.qr}</div>
           <h1>${machine.desc}</h1>
           <span class="pill ${machine.status}">${STATUS_LABEL[machine.status]}</span>
         </div>
@@ -1250,6 +1304,10 @@ function show(code) {
             <span class="k">Serial #:</span>
             <span class="v mono">${machine.serial}</span>
             <span class="hint">Stamped on the machine's plate</span>
+          </div>
+          <div class="row">
+            <span class="k">Last scanned:</span>
+            <span class="v">${lastScanText(machine)}</span>
           </div>
         </dl>
       </div>
@@ -1316,9 +1374,7 @@ function useBlock(machine) {
 
       <label class="flabel" for="where">Location</label>
       <select class="finput" id="where">
-        ${LOCATIONS.map(place => `
-          <option ${place === lastPlace ? "selected" : ""}>${place}</option>
-        `).join("")}
+        ${locationOptions(lastPlace)}
       </select>
 
       <label class="flabel" for="condition">Condition</label>
@@ -1462,6 +1518,7 @@ function drawLifts() {
 
     return !needle ||
       m.unit.toLowerCase().includes(needle) ||
+      (m.serial || "").toLowerCase().includes(needle) ||
       m.desc.toLowerCase().includes(needle) ||
       m.job.toLowerCase().includes(needle);
   });
