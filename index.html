@@ -208,6 +208,17 @@
 
   .warn-text { color: var(--warn); font-size: 14px; margin: -8px 0 14px; }
 
+  .opt { color: var(--ink-3); font-weight: 400; }
+
+  .taghead {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    color: var(--ink-3);
+    margin: 0 0 16px;
+  }
+  .taghead strong { color: var(--navy); font-size: 16px; }
+
   /* An instruction the operator has to act on, not just information. Sits
      apart from the form so it doesn't read as another field. */
   .instruct {
@@ -500,7 +511,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 28";
+const APP_VERSION = "build 29";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -647,6 +658,156 @@ function recordScan(code) {
 }
 
 
+// ---------------------------------------------------------------------------
+// ADDING A MACHINE TO THE REGISTER
+//
+// Everything here is typed once, at the dock, by the person standing next to
+// the machine. Getting it right here is worth a lot: every scan afterwards
+// inherits it, and a wrong serial number is a wrong serial number forever.
+// ---------------------------------------------------------------------------
+
+async function addLift() {
+  const warn = document.getElementById("inWarn");
+  const val  = id => document.getElementById(id).value.trim();
+
+  const lift = {
+    id: newId(),
+    qr:     intakeCode,
+    job:    val("inJob"),
+    vendor: val("inVendor"),
+    unit:   val("inUnit"),
+    serial: val("inSerial"),
+    po:     val("inPo"),          // may be blank
+    desc:   val("inDesc"),
+    onRent: val("inDate"),
+    addedBy: val("inName"),
+    addedAt: new Date().toISOString(),
+    status: "active"
+  };
+
+  // Everything except the PO and the photo has to be there. A register with
+  // holes in it is the thing this whole system is trying to replace.
+  const missing =
+    !lift.job    ? "Choose a job number."      :
+    !lift.vendor ? "Choose a vendor."          :
+    !lift.unit   ? "Put in the unit number."   :
+    !lift.serial ? "Put in the serial number." :
+    !lift.desc   ? "Put in the description."   :
+    !lift.addedBy ? "Put your name in."        : "";
+
+  if (missing) {
+    warn.textContent = missing;
+    return;
+  }
+
+  // Same serial on two tags means one machine has been registered twice, and
+  // the serial is the one number that cannot be duplicated.
+  const clash = register().find(m =>
+    m.serial && m.serial.toLowerCase() === lift.serial.toLowerCase()
+  );
+  if (clash) {
+    warn.textContent =
+      "Serial " + lift.serial + " is already in the register on tag " + clash.qr + ".";
+    return;
+  }
+
+  warn.textContent = "";
+
+  const button = document.querySelector("[data-addlift]");
+  button.textContent = "Adding…";
+  button.disabled = true;
+
+  // Shrink the photo on the phone before it goes anywhere. A raw picture is
+  // several megabytes; this is a few hundred kilobytes and a serial plate is
+  // still perfectly readable.
+  const file = document.getElementById("inPhoto").files[0];
+  if (file) {
+    try {
+      lift.photo = await shrinkPhoto(file);
+    } catch (err) {
+      lift.photo = "";   // a photo is never worth losing the machine over
+    }
+  }
+
+  // On the phone first, so the machine exists even if the sheet is not
+  // reachable. Everything else follows from that.
+  const local = readLocalMachines();
+  local.push(lift);
+  localStorage.setItem(LOCAL_MACHINES, JSON.stringify(local));
+
+  await sendLifts();
+
+  intakeCode = "";
+  go(lift.qr);      // straight to the machine that was just created
+}
+
+
+// Draw the picture onto a canvas at a smaller size and read it back out as a
+// JPEG. 1600 across is plenty to read a plate off.
+function shrinkPhoto(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const image = new Image();
+
+      image.onload = () => {
+        const max   = 1600;
+        const scale = Math.min(1, max / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width  = Math.round(image.width * scale);
+        canvas.height = Math.round(image.height * scale);
+        canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.72));
+      };
+
+      image.onerror = reject;
+      image.src = reader.result;
+    };
+
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+
+// Send any machines the sheet has not got yet. Same shape as sending scans:
+// the phone keeps them, the sheet confirms what it stored, and only then are
+// they marked off.
+async function sendLifts() {
+  if (!navigator.onLine) return;
+
+  const waiting = readLocalMachines().filter(m => !m.sent);
+  if (!waiting.length) return;
+
+  try {
+    const response = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ machines: waiting })
+    });
+
+    const result = await response.json();
+    if (!result.ok) return;
+
+    const landed = {};
+    (result.saved || []).forEach(id => { landed[id] = true; });
+
+    const local = readLocalMachines();
+    local.forEach(m => {
+      if (landed[m.id]) {
+        m.sent = true;
+        delete m.photo;   // the sheet has it now; no need to carry it around
+      }
+    });
+    localStorage.setItem(LOCAL_MACHINES, JSON.stringify(local));
+
+  } catch (err) {
+    // No signal. It stays on the phone and goes with the next attempt.
+  }
+}
+
+
 function newId() {
   if (crypto.randomUUID) return crypto.randomUUID();
   return "s-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
@@ -662,6 +823,7 @@ function timeOf(scan) {
 // Read which screen the address bar is asking for. Null means the front.
 function idFromAddress() {
   const params = new URLSearchParams(window.location.search);
+  if (params.get("new")) return INTAKE;
   if (params.get("all")) return ALL_LIFTS;
   return params.get("id");
 }
@@ -669,7 +831,31 @@ function idFromAddress() {
 // Look through the list for a machine whose qr code matches.
 // toUpperCase() so a lowercase a4x7 still works.
 function findMachine(code) {
-  return MACHINES.find(m => m.qr === (code || "").toUpperCase());
+  return register().find(m => m.qr === (code || "").toUpperCase());
+}
+
+
+// ---------------------------------------------------------------------------
+// THE REGISTER
+//
+// The built-in list plus anything tagged on this phone. Until the register
+// lives in the sheet, a lift added at intake has to be visible here straight
+// away — otherwise you tag a machine, scan it, and the app says it doesn't
+// exist, which is the one thing that would stop anyone trusting it.
+// ---------------------------------------------------------------------------
+
+const LOCAL_MACHINES = "liftregister.machines";
+
+function readLocalMachines() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_MACHINES)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function register() {
+  return MACHINES.concat(readLocalMachines());
 }
 
 
@@ -685,7 +871,69 @@ const app = document.getElementById("app");
 function show(code) {
   const machine = findMachine(code);
 
-  if (code === ALL_LIFTS) {
+  if (code === INTAKE) {
+    // A machine that arrived on site. The tag has already been scanned, so
+    // we know its code — everything else has to be typed once, here, and
+    // never again.
+    const lastName = localStorage.getItem(LAST_NAME) || "";
+
+    app.innerHTML = `
+      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
+
+      <div class="card form">
+        <p class="taghead">NEW TAG <strong>${intakeCode}</strong></p>
+
+        <label class="flabel" for="inJob">Job #</label>
+        <select class="finput" id="inJob">
+          <option value="">Choose one</option>
+          ${PROJECTS.map(j => `<option>${j}</option>`).join("")}
+        </select>
+
+        <label class="flabel" for="inVendor">Vendor</label>
+        <select class="finput" id="inVendor">
+          <option value="">Choose one</option>
+          ${VENDORS.map(v => `<option>${v}</option>`).join("")}
+        </select>
+
+        <label class="flabel" for="inUnit">Unit #</label>
+        <input class="finput" id="inUnit" type="text" autocomplete="off"
+               autocapitalize="characters" spellcheck="false"
+               placeholder="The vendor's sticker number">
+
+        <label class="flabel" for="inSerial">Serial #</label>
+        <input class="finput" id="inSerial" type="text" autocomplete="off"
+               autocapitalize="characters" spellcheck="false"
+               placeholder="Stamped on the machine's plate">
+
+        <label class="flabel" for="inPo">PO # <span class="opt">optional</span></label>
+        <input class="finput" id="inPo" type="text" autocomplete="off"
+               autocapitalize="characters" spellcheck="false"
+               placeholder="Leave blank if you don't have it yet">
+
+        <label class="flabel" for="inDesc">Description</label>
+        <input class="finput" id="inDesc" type="text" autocomplete="off"
+               autocapitalize="characters" spellcheck="false"
+               placeholder="MANLIFT-25' SELF PROP ELECTRIC">
+
+        <label class="flabel" for="inDate">On-rent date</label>
+        <input class="finput" id="inDate" type="date" value="${today()}">
+
+        <label class="flabel" for="inPhoto">
+          Photo of the machine <span class="opt">optional</span>
+        </label>
+        <input class="finput" id="inPhoto" type="file"
+               accept="image/*" capture="environment">
+
+        <label class="flabel" for="inName">Your name</label>
+        <input class="finput" id="inName" type="text" value="${lastName}"
+               placeholder="First and last" autocomplete="off"
+               autocapitalize="words" spellcheck="false">
+
+        <p class="warn-text" id="inWarn"></p>
+        <button class="btn" data-addlift>Add to the register</button>
+      </div>`;
+
+  } else if (code === ALL_LIFTS) {
     // Every lift on the job, searchable. This is the office's way in, and
     // the way to reach a machine whose tag is damaged.
     app.innerHTML = `
@@ -701,10 +949,11 @@ function show(code) {
     drawLifts();
 
   } else if (!code) {
-    // The way in. Two bars and nothing else to read.
+    // The way in. Three bars and nothing else to read.
     app.innerHTML = `
       <button class="btn navy" data-scan>SCAN A TAG</button>
       <button class="btn navy" data-all>ALL LIFTS</button>
+      <button class="btn navy" data-intake>ADD A LIFT</button>
       ${scanListBlock()}`;
 
   } else if (!machine) {
@@ -885,9 +1134,19 @@ function scanListBlock() {
 // Change which machine is on screen without reloading the page. The address
 // bar is updated to match, so the back button behaves and the address can be
 // shared — but nothing is fetched, which is what keeps this working offline.
-// The name for the all-lifts screen. Not a machine code, so it can travel
-// through the same routing as one.
+// Names for the screens that are not a machine. Not machine codes, so they
+// can travel through the same routing as one.
 const ALL_LIFTS = "__all__";
+const INTAKE    = "__intake__";
+
+// The tag being registered, set by the scan that starts intake.
+let intakeCode = "";
+
+// The vendors on this job. Same list as the register uses, so a machine
+// added at intake matches the ones already in it.
+const VENDORS = [
+  "Opifex", "Texas First", "United Rentals", "Sunstate", "Equipment Share"
+];
 
 // How many screens deep into the app we are, so Back knows whether there is
 // anywhere to go back to.
@@ -897,7 +1156,8 @@ function go(code) {
   justSaved = null;   // a receipt belongs to the screen it was shown on
   depth++;
 
-  const address = code === ALL_LIFTS ? "?all=1"
+  const address = code === INTAKE   ? "?new=1"
+                : code === ALL_LIFTS ? "?all=1"
                 : code               ? "?id=" + code
                 :                      "./";
 
@@ -927,7 +1187,8 @@ function drawLifts() {
   const needle = (document.getElementById("find").value || "").trim().toLowerCase();
   const job    = document.getElementById("jobFilter").value;
 
-  const found = MACHINES.filter(m => {
+  const all   = register();
+  const found = all.filter(m => {
     if (job && m.job !== job) return false;
 
     return !needle ||
@@ -937,7 +1198,7 @@ function drawLifts() {
   });
 
   document.getElementById("lifts").innerHTML = `
-    <p class="count">${found.length} of ${MACHINES.length} lifts</p>
+    <p class="count">${found.length} of ${all.length} lifts</p>
     <div class="list">
       ${found.map(m => `
         <a href="?id=${m.qr}" data-go="${m.qr}">
@@ -979,6 +1240,7 @@ const ctx    = canvas.getContext("2d", { willReadFrequently: true });
 
 let stream  = null;    // the live camera feed, kept between scans
 let looking = false;   // true while the decode loop should keep running
+let scanFor = "open";  // "open" a known machine, or "intake" a new one
 let handBack = null;   // countdown to giving the camera back
 
 // Because the camera is kept between scans, the video element still holds the
@@ -1095,6 +1357,22 @@ function look() {
         lastCode   = code;
         lastCodeAt = now;
         closeScanner();
+
+        // Tagging a machine that has just arrived, rather than opening one
+        // that is already in the register.
+        if (scanFor === "intake") {
+          scanFor = "open";
+
+          if (findMachine(code)) {
+            // Already registered. Show it rather than asking for it twice.
+            go(code);
+          } else {
+            intakeCode = code.toUpperCase();
+            go(INTAKE);
+          }
+          return;
+        }
+
         go(code);
         return;
       }
@@ -1132,6 +1410,19 @@ document.addEventListener("click", event => {
   if (event.target.closest("[data-all]")) {
     event.preventDefault();
     go(ALL_LIFTS);
+  }
+
+  // Adding a machine starts the same way using it does — by scanning its
+  // tag. The difference is what happens with the code afterwards.
+  if (event.target.closest("[data-intake]")) {
+    event.preventDefault();
+    scanFor = "intake";
+    startScan();
+  }
+
+  if (event.target.closest("[data-addlift]")) {
+    event.preventDefault();
+    addLift();
   }
 
   // A row in the all-lifts list. Handled here rather than letting the link
