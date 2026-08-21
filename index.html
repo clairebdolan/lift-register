@@ -70,33 +70,13 @@
     width: 74%;
     max-width: 320px;
     background: var(--card);
-    padding: 26px 22px;
+    padding: 18px 22px;
     box-shadow: 0 0 30px rgba(0,0,0,0.25);
     overflow-y: auto;
   }
 
   /* The rest of the app, dimmed. Tapping it closes the menu. */
   .drawerback { flex: 1; background: rgba(0,0,0,0.35); }
-
-  .drawerhead { margin-bottom: 22px; }
-  .drawericon {
-    width: 46px;
-    height: 46px;
-    border-radius: 11px;
-    display: block;
-    margin-bottom: 12px;
-  }
-  .drawername {
-    margin: 0;
-    font-size: 19px;
-    font-weight: 700;
-    color: var(--ink);
-  }
-  .drawersub {
-    margin: 2px 0 0;
-    font-size: 14px;
-    color: var(--ink-3);
-  }
 
   /* Plain rows. No boxes — the icon and the word are the whole thing. */
   .drawernav a {
@@ -518,12 +498,6 @@
      a place you have gone. Tapping the dimmed part closes it. -->
 <div class="drawer" id="drawer" hidden>
   <div class="drawerpane">
-    <div class="drawerhead">
-      <img class="drawericon" src="icon-lr-2.png" alt="">
-      <p class="drawername">Lift Register</p>
-      <p class="drawersub" id="drawersub"></p>
-    </div>
-
     <nav class="drawernav">
       <a href="#" data-go-pending>
         <!-- cloud with an arrow going up: things on their way out -->
@@ -635,7 +609,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 43";
+const APP_VERSION = "build 44";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -982,11 +956,6 @@ function toggleDrawer() {
 }
 
 function openDrawer() {
-  const waiting = pendingCount();
-
-  document.getElementById("drawersub").textContent =
-    waiting ? waiting + " waiting to send" : "Everything sent";
-
   drawer.hidden = false;
   sendAll();      // opening the menu is a fair moment to try the queue again
 }
