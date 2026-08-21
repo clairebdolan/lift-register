@@ -533,7 +533,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 30";
+const APP_VERSION = "build 31";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -758,6 +758,7 @@ async function addLift() {
   localStorage.setItem(LOCAL_MACHINES, JSON.stringify(local));
 
   await sendLifts();
+  await fetchRegister();   // pull it straight back so every phone agrees
 
   intakeCode = "";
   go(lift.qr);      // straight to the machine that was just created
@@ -867,7 +868,9 @@ function findMachine(code) {
 // exist, which is the one thing that would stop anyone trusting it.
 // ---------------------------------------------------------------------------
 
-const LOCAL_MACHINES = "liftregister.machines";
+const LOCAL_MACHINES = "liftregister.machines";   // added on this phone
+const SHEET_MACHINES = "liftregister.register";   // last copy of the sheet
+const REGISTER_AT    = "liftregister.registerat"; // when that copy arrived
 
 function readLocalMachines() {
   try {
@@ -877,8 +880,70 @@ function readLocalMachines() {
   }
 }
 
+function readSheetMachines() {
+  try {
+    return JSON.parse(localStorage.getItem(SHEET_MACHINES)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+// What the app believes exists.
+//
+// The sheet is the truth. The built-in list is only a stand-in for a phone
+// that has never managed to reach it — once a real register arrives, the
+// sample lifts disappear for good.
+//
+// Machines tagged on this phone are added on top until the sheet comes back
+// carrying them, which stops a lift from vanishing in the minutes between
+// registering it and the sheet catching up.
 function register() {
-  return MACHINES.concat(readLocalMachines());
+  const fromSheet = readSheetMachines();
+  const base      = fromSheet.length ? fromSheet : MACHINES;
+
+  const known = {};
+  base.forEach(m => { known[m.qr] = true; });
+
+  const mine = readLocalMachines().filter(m => !known[m.qr]);
+
+  return base.concat(mine);
+}
+
+
+// Ask the sheet for the register. Quiet on failure — a phone with no signal
+// keeps the copy it already has, which is the whole point of keeping one.
+async function fetchRegister() {
+  if (!navigator.onLine) return;
+
+  try {
+    const response = await fetch(ENDPOINT + "?list=machines", { method: "GET" });
+    const result   = await response.json();
+
+    if (!result.ok || !Array.isArray(result.machines)) return;
+
+    localStorage.setItem(SHEET_MACHINES, JSON.stringify(result.machines));
+    localStorage.setItem(REGISTER_AT, new Date().toISOString());
+
+    // Anything the sheet now carries no longer needs holding on this phone.
+    const stillMine = readLocalMachines().filter(mine =>
+      !result.machines.some(m => m.qr === mine.qr)
+    );
+    localStorage.setItem(LOCAL_MACHINES, JSON.stringify(stillMine));
+
+  } catch (err) {
+    // No signal, or the sheet is unreachable. Keep what we have.
+  }
+}
+
+
+// When the register last came down, for the line under the search box.
+function registerAge() {
+  const when = localStorage.getItem(REGISTER_AT);
+  if (!when) return "never updated on this phone";
+
+  return "updated " + new Date(when).toLocaleString([], {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+  });
 }
 
 
@@ -1245,7 +1310,7 @@ function drawLifts() {
   });
 
   document.getElementById("lifts").innerHTML = `
-    <p class="count">${found.length} of ${all.length} lifts</p>
+    <p class="count">${found.length} of ${all.length} lifts &middot; ${registerAge()}</p>
     <div class="list">
       ${found.map(m => `
         <a href="?id=${m.qr}" data-go="${m.qr}">
@@ -1588,14 +1653,17 @@ function updatePending() {
 
 updatePending();
 sync();
+fetchRegister().then(() => { if (idFromAddress() === ALL_LIFTS) show(ALL_LIFTS); });
 
 // Try again whenever the app comes back to the front, or the phone finds
 // signal. Between them, walking out of a hall is enough.
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") sync();
+  if (document.visibilityState !== "visible") return;
+  sync();
+  fetchRegister();
 });
 
-window.addEventListener("online", sync);
+window.addEventListener("online", () => { sync(); fetchRegister(); });
 </script>
 </body>
 </html>
