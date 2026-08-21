@@ -533,7 +533,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 31";
+const APP_VERSION = "build 32";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -757,11 +757,15 @@ async function addLift() {
   local.push(lift);
   localStorage.setItem(LOCAL_MACHINES, JSON.stringify(local));
 
-  await sendLifts();
-  await fetchRegister();   // pull it straight back so every phone agrees
-
+  // Show the machine straight away. It is registered the moment it is on the
+  // phone; getting it to the sheet is a separate job that happens behind the
+  // screen. Waiting on two round trips to Google before showing anything is
+  // several seconds of somebody standing at a lift wondering if it worked.
   intakeCode = "";
-  go(lift.qr);      // straight to the machine that was just created
+  go(lift.qr);
+  updatePending();
+
+  sendLifts().then(fetchRegister);
 }
 
 
@@ -929,6 +933,7 @@ async function fetchRegister() {
       !result.machines.some(m => m.qr === mine.qr)
     );
     localStorage.setItem(LOCAL_MACHINES, JSON.stringify(stillMine));
+    updatePending();
 
   } catch (err) {
     // No signal, or the sheet is unreachable. Keep what we have.
@@ -1645,7 +1650,9 @@ async function sync() {
 // The count of scans still on the phone. Lives in the footer rather than the
 // page body so it can update without wiping a form somebody is typing into.
 function updatePending() {
-  const waiting = readScans().filter(scan => !scan.sent).length;
+  const waiting = readScans().filter(scan => !scan.sent).length +
+                  readLocalMachines().filter(lift => !lift.sent).length;
+
   document.getElementById("pending").textContent =
     waiting ? " · " + waiting + " waiting to send" : "";
 }
