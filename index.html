@@ -509,7 +509,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 37";
+const APP_VERSION = "build 38";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -738,7 +738,8 @@ async function addLift() {
   // screen. Waiting on two round trips to Google before showing anything is
   // several seconds of somebody standing at a lift wondering if it worked.
   intakeCode = "";
-  go(lift.qr);
+  justAdded  = lift;
+  go(null);              // back to the front screen, not into the new lift
   updatePending();
 
   sendLifts().then(fetchRegister);
@@ -1186,8 +1187,22 @@ function show(code) {
     drawLifts();
 
   } else if (!code) {
-    // The way in. Three bars and nothing else to read.
+    // The way in. Four bars and nothing else to read.
+    //
+    // The confirmation shows once, on the way back from adding a machine,
+    // and is cleared as it is drawn so it does not greet you every time you
+    // come home afterwards.
+    const added = justAdded;
+    justAdded = null;
+
     app.innerHTML = `
+      ${added ? `
+        <div class="card recorded">
+          <p class="who">Added to the register</p>
+          <p class="sub">${added.desc}</p>
+          <p class="sub">Tag ${added.qr} &middot; Unit #${added.unit}
+          &middot; ${added.job}</p>
+        </div>` : ""}
       <button class="btn red" data-scan>SCAN A TAG</button>
       <button class="btn navy" data-all>ALL LIFTS</button>
       <button class="btn navy" data-intake>ADD A LIFT</button>
@@ -1392,6 +1407,9 @@ let clashCode = "";
 
 // The equipment request just sent, so the screen can confirm it.
 let requestSent = null;
+
+// The machine just added, so the front screen can confirm it.
+let justAdded = null;
 
 // The vendors on this job. Same list as the register uses, so a machine
 // added at intake matches the ones already in it.
