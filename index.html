@@ -294,6 +294,26 @@
     margin: 0 0 12px;
   }
 
+  /* Back, pinned to the top of the screen. With 150 lifts in a list, a link
+     at the bottom is a link nobody can reach. Sticky, so it stays put while
+     the list scrolls under it. */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin: -20px -18px 16px;      /* out to the screen edges */
+    padding: 13px 18px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar a {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
   .back { margin-top: 26px; font-size: 15px; }
 
   /* ---- camera overlay ----------------------------------------------------
@@ -404,12 +424,26 @@
 // ---------------------------------------------------------------------------
 
 const MACHINES = [
-  { qr: "A4X7", desc: "MANLIFT-25' SELF PROP ELECTRIC",     vendor: "Sunstate",        unit: "1044821",   serial: "GS2632-181422",  job: "DFW10",    status: "active" },
-  { qr: "B2K9", desc: "SCISSORLIFT-32' ELECTRIC NARROW",    vendor: "United Rentals",  unit: "7719340",   serial: "GS3246-905118",  job: "DFW10",    status: "active" },
-  { qr: "C8M3", desc: "BOOMLIFT-60' TELESCOPIC 4WD DIESEL", vendor: "Texas First",     unit: "TF-40218",  serial: "S60XC-330281",   job: "DFW12",    status: "active" },
-  { qr: "D5R1", desc: "SCISSORLIFT-19' ELECTRIC",           vendor: "Equipment Share", unit: "4420118",   serial: "GS1930-772904",  job: "DFW10TFO", status: "active" },
-  { qr: "E7T4", desc: "BOOMLIFT-45' ARTICULATING DIESEL",   vendor: "Opifex",          unit: "OPX-11877", serial: "Z45-25J-118773", job: "DFW12",    status: "active" },
-  { qr: "F1W8", desc: "SCISSORLIFT-40' RT DIESEL",          vendor: "Sunstate",        unit: "1044977",   serial: "GS4047-661209",  job: "DFW10TFO", status: "active" }
+  // DFW10 — the original six
+  { qr: "A4X7", desc: "MANLIFT-25' SELF PROP ELECTRIC",       vendor: "Sunstate",        unit: "1044821",   serial: "GS2632-181422",  job: "DFW10",    status: "active" },
+  { qr: "B2K9", desc: "SCISSORLIFT-32' ELECTRIC NARROW",      vendor: "United Rentals",  unit: "7719340",   serial: "GS3246-905118",  job: "DFW10",    status: "active" },
+  { qr: "C8M3", desc: "BOOMLIFT-60' TELESCOPIC 4WD DIESEL",   vendor: "Texas First",     unit: "TF-40218",  serial: "S60XC-330281",   job: "DFW10",    status: "active" },
+  { qr: "D5R1", desc: "SCISSORLIFT-19' ELECTRIC",             vendor: "Equipment Share", unit: "4420118",   serial: "GS1930-772904",  job: "DFW10",    status: "active" },
+  { qr: "E7T4", desc: "BOOMLIFT-45' ARTICULATING DIESEL",     vendor: "Opifex",          unit: "OPX-11877", serial: "Z45-25J-118773", job: "DFW10",    status: "active" },
+  { qr: "F1W8", desc: "SCISSORLIFT-40' RT DIESEL",            vendor: "Sunstate",        unit: "1044977",   serial: "GS4047-661209",  job: "DFW10",    status: "active" },
+
+  // DFW12
+  { qr: "G3P6", desc: "SCISSORLIFT-26' ELECTRIC",             vendor: "Sunstate",        unit: "1045102",   serial: "GS2646-118330",  job: "DFW12",    status: "active" },
+  { qr: "H9Q2", desc: "BOOMLIFT-40' ARTICULATING ELECTRIC",   vendor: "United Rentals",  unit: "7719688",   serial: "Z40N-220914",    job: "DFW12",    status: "active" },
+  { qr: "J4L7", desc: "MANLIFT-30' SELF PROP ELECTRIC",       vendor: "Texas First",     unit: "TF-40355",  serial: "S3013-772210",   job: "DFW12",    status: "active" },
+  { qr: "K6D8", desc: "SCISSORLIFT-32' RT DIESEL",            vendor: "Equipment Share", unit: "4420772",   serial: "GS3390-441027",  job: "DFW12",    status: "active" },
+  { qr: "M2N5", desc: "BOOMLIFT-80' TELESCOPIC DIESEL",       vendor: "Opifex",          unit: "OPX-12044", serial: "S80X-908812",    job: "DFW12",    status: "active" },
+  { qr: "N7V3", desc: "SCISSORLIFT-19' ELECTRIC",             vendor: "Sunstate",        unit: "1045338",   serial: "GS1930-330175",  job: "DFW12",    status: "active" },
+
+  // DFW10TFO
+  { qr: "P5B9", desc: "MANLIFT-25' SELF PROP ELECTRIC",       vendor: "United Rentals",  unit: "7719901",   serial: "GS2632-556104",  job: "DFW10TFO", status: "active" },
+  { qr: "Q8F4", desc: "SCISSORLIFT-40' RT DIESEL",            vendor: "Texas First",     unit: "TF-40492",  serial: "GS4047-220683",  job: "DFW10TFO", status: "active" },
+  { qr: "R3H6", desc: "BOOMLIFT-45' ARTICULATING DIESEL",     vendor: "Equipment Share", unit: "4421095",   serial: "Z45-25J-771248", job: "DFW10TFO", status: "active" }
 ];
 
 // Friendly wording for each status code.
@@ -467,7 +501,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 26";
+const APP_VERSION = "build 27";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -656,12 +690,16 @@ function show(code) {
     // Every lift on the job, searchable. This is the office's way in, and
     // the way to reach a machine whose tag is damaged.
     app.innerHTML = `
+      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
+      <select class="find" id="jobFilter">
+        <option value="">All jobs</option>
+        ${PROJECTS.map(j => `<option>${j}</option>`).join("")}
+      </select>
       <input class="find" id="find" type="search" autocomplete="off"
              placeholder="Search by unit number" autocapitalize="characters">
-      <div id="lifts"></div>
-      <p class="note back"><a href="#" data-back>BACK</a></p>`;
+      <div id="lifts"></div>`;
 
-    drawLifts("");
+    drawLifts();
 
   } else if (!code) {
     // The way in. Two bars and nothing else to read.
@@ -673,6 +711,7 @@ function show(code) {
   } else if (!machine) {
     // A code came back but it isn't one we know.
     app.innerHTML = `
+      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
       <div class="card missing">
         <h1>Machine not found</h1>
         <p>Tag <strong>${code}</strong> isn't in the register.
@@ -684,6 +723,7 @@ function show(code) {
   } else {
     // Found it. Show the machine.
     app.innerHTML = `
+      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
       <div class="card">
         <div class="card-top">
           <!-- TODO before the field pilot: DELETE this tag code line.
@@ -886,15 +926,18 @@ function goBack() {
 // The rows on the all-lifts screen. Drawn separately from the screen itself
 // so typing in the search box redraws the list without touching the box —
 // otherwise the keyboard closes on every letter.
-function drawLifts(term) {
-  const needle = term.trim().toLowerCase();
+function drawLifts() {
+  const needle = (document.getElementById("find").value || "").trim().toLowerCase();
+  const job    = document.getElementById("jobFilter").value;
 
-  const found = MACHINES.filter(m =>
-    !needle ||
-    m.unit.toLowerCase().includes(needle) ||
-    m.desc.toLowerCase().includes(needle) ||
-    m.job.toLowerCase().includes(needle)
-  );
+  const found = MACHINES.filter(m => {
+    if (job && m.job !== job) return false;
+
+    return !needle ||
+      m.unit.toLowerCase().includes(needle) ||
+      m.desc.toLowerCase().includes(needle) ||
+      m.job.toLowerCase().includes(needle);
+  });
 
   document.getElementById("lifts").innerHTML = `
     <p class="count">${found.length} of ${MACHINES.length} lifts</p>
@@ -908,7 +951,7 @@ function drawLifts(term) {
         </a>
       `).join("")}
     </div>
-    ${found.length ? "" : `<p class="lede">No lift with that unit number.</p>`}`;
+    ${found.length ? "" : `<p class="lede">Nothing matches.</p>`}`;
 }
 
 // Draw whatever the address bar says, now and whenever the back button moves.
@@ -1120,7 +1163,7 @@ document.addEventListener("click", event => {
 
 // Typing in the search box on the all-lifts screen.
 document.addEventListener("input", event => {
-  if (event.target.id === "find") drawLifts(event.target.value);
+  if (event.target.id === "find") drawLifts();
 });
 
 document.addEventListener("change", event => {
@@ -1132,6 +1175,8 @@ document.addEventListener("change", event => {
   }
 
   // Asking for a call off comes with somewhere to put the machine.
+  if (event.target.id === "jobFilter") drawLifts();
+
   if (event.target.id === "calloff") {
     document.getElementById("calloffNote").hidden = event.target.value !== "Yes";
   }
