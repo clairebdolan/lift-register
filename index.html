@@ -49,13 +49,29 @@
 
   .wrap { max-width: 520px; margin: 0 auto; }
 
+  /* Title on the left, menu on the right. */
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+
+  .menubtn {
+    border: none;
+    background: none;
+    color: var(--navy);
+    font-size: 26px;
+    line-height: 1;
+    padding: 4px 2px;
+  }
+
   .brand {
     font-family: var(--mono);
     font-size: 16px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--navy);
-    margin-bottom: 18px;
   }
 
   .card {
@@ -422,7 +438,10 @@
 
 <body>
 <div class="wrap">
-  <div class="brand">Lift Register</div>
+  <div class="head">
+    <div class="brand">Lift Register</div>
+    <button class="menubtn" data-menu aria-label="Menu">&#9776;</button>
+  </div>
 
   <!-- Everything below gets filled in by the script at the bottom. -->
   <div id="app"></div>
@@ -509,7 +528,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 40";
+const APP_VERSION = "build 41";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -824,13 +843,7 @@ async function sendLifts() {
   if (!waiting.length) return;
 
   try {
-    const response = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ machines: waiting })
-    });
-
-    const result = await response.json();
+    const result = await postToSheet({ machines: waiting });
     if (!result.ok) return;
 
     const landed = {};
@@ -917,13 +930,7 @@ async function pushRequests() {
   if (!waiting.length) return;
 
   try {
-    const response = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ requests: waiting })
-    });
-
-    const result = await response.json();
+    const result = await postToSheet({ requests: waiting });
     if (!result.ok) return;
 
     const landed = {};
@@ -955,6 +962,9 @@ function timeOf(scan) {
 // Read which screen the address bar is asking for. Null means the front.
 function idFromAddress() {
   const params = new URLSearchParams(window.location.search);
+  if (params.get("menu")) return MENU;
+  if (params.get("pending")) return PENDING;
+  if (params.get("recent")) return RECENT;
   if (params.get("request")) return REQUEST;
   if (params.get("known")) return ALREADY;
   if (params.get("new")) return INTAKE;
@@ -1106,7 +1116,74 @@ const app = document.getElementById("app");
 function show(code) {
   const machine = findMachine(code);
 
-  if (code === REQUEST) {
+  if (code === PENDING) {
+    // Everything this phone is still holding. Somewhere to look when the
+    // footer says something is waiting and you want to know what.
+    const scans    = readScans().filter(s => !s.sent);
+    const machines = readLocalMachines().filter(m => !m.sent);
+    const asks     = readRequests().filter(r => !r.sent);
+    const total    = scans.length + machines.length + asks.length;
+
+    app.innerHTML = `
+      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
+
+      ${total ? `
+        <p class="lede">${total} ${total === 1 ? "thing" : "things"} on this
+        phone haven't reached the sheet yet. They go on their own when there's
+        signal — this is just so you can see what they are.</p>
+
+        <div class="scans">
+          ${machines.map(m => `
+            <div class="entry">
+              New lift &middot; ${m.desc}<br>
+              <span class="meta">Tag ${m.qr} &middot; Unit #${m.unit}
+              &middot; ${whenText(m.addedAt)}</span>
+            </div>`).join("")}
+
+          ${scans.map(s => {
+            const machine = findMachine(s.qr);
+            return `
+              <div class="entry">
+                Scan &middot; ${machine ? machine.desc : s.qr}<br>
+                <span class="meta">${s.name} &middot; ${s.place}
+                &middot; ${whenText(s.at)}</span>
+              </div>`;
+          }).join("")}
+
+          ${asks.map(r => `
+            <div class="entry">
+              Equipment request &middot; ${r.equipment}<br>
+              <span class="meta">${r.job} &middot; ${r.name}
+              &middot; ${whenText(r.at)}</span>
+            </div>`).join("")}
+        </div>
+
+        <button class="btn navy" data-sendnow>Send now</button>`
+      : `
+        <p class="lede">Nothing waiting. Everything on this phone has reached
+        the sheet.</p>`}`;
+
+  } else if (code === MENU) {
+    app.innerHTML = `
+      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
+
+      <div class="list">
+        <a href="#" data-go-pending>
+          <span><span class="lbl">Waiting to send</span><br>
+          <span class="sub">${pendingCount()} on this phone</span></span>
+        </a>
+        <a href="#" data-go-recent>
+          <span><span class="lbl">Recorded on this phone</span><br>
+          <span class="sub">${readScans().length} scans</span></span>
+        </a>
+      </div>`;
+
+  } else if (code === RECENT) {
+    app.innerHTML = `
+      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
+      ${scanListBlock() || `<p class="lede">No scans recorded on this phone yet.</p>`}`;
+
+  } else if (code === REQUEST) {
     // Asking for a machine that is not on site yet. Nothing to scan, because
     // the thing being asked for does not exist here.
     const lastName    = localStorage.getItem(LAST_NAME) || "";
@@ -1262,8 +1339,7 @@ function show(code) {
       <button class="btn red" data-scan>SCAN A TAG</button>
       <button class="btn navy" data-all>ALL LIFTS</button>
       <button class="btn navy" data-intake>ADD A LIFT</button>
-      <button class="btn navy" data-request>SUBMIT EQUIPMENT REQUEST</button>
-      ${scanListBlock()}`;
+      <button class="btn navy" data-request>SUBMIT EQUIPMENT REQUEST</button>`;
 
   } else if (!machine) {
     // A code came back but it isn't one we know.
@@ -1451,6 +1527,9 @@ const ALL_LIFTS = "__all__";
 const INTAKE    = "__intake__";
 const ALREADY   = "__already__";
 const REQUEST   = "__request__";
+const MENU      = "__menu__";
+const PENDING   = "__pending__";
+const RECENT    = "__recent__";
 
 // The tag being registered, set by the scan that starts intake.
 let intakeCode = "";
@@ -1479,7 +1558,15 @@ function go(code) {
   requestSent = null;
   depth++;
 
-  const address = code === REQUEST  ? "?request=1"
+  // Moving between screens is a fair moment to try the queue again — most
+  // of all coming back to the front screen, which is where somebody looks
+  // to see whether their scan went.
+  if (!code || code === MENU || code === PENDING) sendAll();
+
+  const address = code === MENU     ? "?menu=1"
+                : code === PENDING  ? "?pending=1"
+                : code === RECENT   ? "?recent=1"
+                : code === REQUEST  ? "?request=1"
                 : code === ALREADY  ? "?known=1"
                 : code === INTAKE   ? "?new=1"
                 : code === ALL_LIFTS ? "?all=1"
@@ -1755,6 +1842,29 @@ document.addEventListener("click", event => {
     addLift();
   }
 
+  if (event.target.closest("[data-menu]")) {
+    event.preventDefault();
+    go(MENU);
+  }
+
+  if (event.target.closest("[data-go-pending]")) {
+    event.preventDefault();
+    go(PENDING);
+  }
+
+  if (event.target.closest("[data-go-recent]")) {
+    event.preventDefault();
+    go(RECENT);
+  }
+
+  if (event.target.closest("[data-sendnow]")) {
+    event.preventDefault();
+    const button = event.target.closest("[data-sendnow]");
+    button.textContent = "Sending…";
+    button.disabled = true;
+    sendAll().then(() => show(PENDING));
+  }
+
   if (event.target.closest("[data-request]")) {
     event.preventDefault();
     go(REQUEST);
@@ -1845,6 +1955,35 @@ document.getElementById("version").textContent = APP_VERSION;
 
 let sending = false;
 
+// A request that never comes back — a phone dozing off mid-send, a bar of
+// signal that disappears — used to leave `sending` stuck on, and every later
+// attempt refused to start. The queue looked permanently stuck until the app
+// was reloaded. Nothing waits forever now.
+const SEND_TIMEOUT = 20000;
+
+function postToSheet(payload) {
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), SEND_TIMEOUT);
+
+  return fetch(ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+    signal: stop.signal
+  })
+    .then(response => response.json())
+    .finally(() => clearTimeout(timer));
+}
+
+
+// Everything the phone is holding, in one go.
+async function sendAll() {
+  await sync();
+  await sendLifts();
+  await pushRequests();
+}
+
+
 async function sync() {
   if (sending || !navigator.onLine) return;
 
@@ -1854,16 +1993,10 @@ async function sync() {
   sending = true;
 
   try {
-    const response = await fetch(ENDPOINT, {
-      method: "POST",
-      // text/plain on purpose. Sending it as JSON makes the browser ask the
-      // server for permission first, and Apps Script cannot answer that
-      // question — so the scan would never leave the phone.
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ scans: waiting })
-    });
-
-    const result = await response.json();
+    // text/plain on purpose. Sending it as JSON makes the browser ask the
+    // server for permission first, and Apps Script cannot answer that
+    // question — so the scan would never leave the phone.
+    const result = await postToSheet({ scans: waiting });
     if (!result.ok) return;
 
     // Mark off only what the sheet actually confirmed.
@@ -1886,13 +2019,29 @@ async function sync() {
 
 // The count of scans still on the phone. Lives in the footer rather than the
 // page body so it can update without wiping a form somebody is typing into.
+function pendingCount() {
+  return readScans().filter(scan => !scan.sent).length +
+         readLocalMachines().filter(lift => !lift.sent).length +
+         readRequests().filter(ask => !ask.sent).length;
+}
+
+
 function updatePending() {
-  const waiting = readScans().filter(scan => !scan.sent).length +
-                  readLocalMachines().filter(lift => !lift.sent).length +
-                  readRequests().filter(ask => !ask.sent).length;
+  const waiting = pendingCount();
 
   document.getElementById("pending").textContent =
     waiting ? " · " + waiting + " waiting to send" : "";
+}
+
+
+// A time somebody can read, for the list of what is still waiting.
+function whenText(iso) {
+  const when = new Date(iso);
+  if (isNaN(when.getTime())) return "";
+
+  return when.toLocaleString([], {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+  });
 }
 
 
