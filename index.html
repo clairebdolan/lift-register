@@ -15,6 +15,18 @@
 <meta name="theme-color" content="#13406A">
 
 <style>
+  /* Libre Franklin, an open revival of Franklin Gothic — the family the
+     Loenbro wordmark is cut from. The file lives in this folder rather than
+     being fetched from Google, so the app looks the same on every phone and
+     still looks right with no signal. Latin characters only, 16KB. */
+  @font-face {
+    font-family: "Libre Franklin";
+    src: url("librefranklin-800.woff2") format("woff2");
+    font-weight: 800;
+    font-style: normal;
+    font-display: swap;
+  }
+
   :root {
     --bg: #EDEEEC;
     --card: #FFFFFF;
@@ -117,9 +129,11 @@
   }
 
   .brand {
-    font-family: var(--mono);
-    font-size: 16px;
-    letter-spacing: 0.14em;
+    font-family: "Libre Franklin", "Franklin Gothic Heavy",
+                 "Avenir Next Condensed", Arial, sans-serif;
+    font-weight: 800;
+    font-size: 21px;
+    letter-spacing: 0.01em;
     text-transform: uppercase;
     color: #fff;
   }
@@ -595,7 +609,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 46";
+const APP_VERSION = "build 47";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
