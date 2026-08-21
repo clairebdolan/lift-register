@@ -448,35 +448,11 @@
 // ---------------------------------------------------------------------------
 // 1. THE MACHINES
 //
-// Fake machines for testing. Later this comes from a real database; for now
-// it's just a list written into the page. "qr" is the code printed on the tag.
-//
-// "desc" is deliberately the vendor's own wording, copied off the rental
-// agreement, so what the operator sees matches what shows up on the invoice.
+// There are none in here. The register lives in the Machines tab of the
+// Google Sheet, and the app reads it — see fetchRegister() further down.
+// Nothing about a machine is written into this file, so a lift can never
+// exist in the app and nowhere else.
 // ---------------------------------------------------------------------------
-
-const MACHINES = [
-  // DFW10 — the original six
-  { qr: "A4X7", desc: "MANLIFT-25' SELF PROP ELECTRIC",       vendor: "Sunstate",        unit: "1044821",   serial: "GS2632-181422",  job: "DFW10",    status: "active" },
-  { qr: "B2K9", desc: "SCISSORLIFT-32' ELECTRIC NARROW",      vendor: "United Rentals",  unit: "7719340",   serial: "GS3246-905118",  job: "DFW10",    status: "active" },
-  { qr: "C8M3", desc: "BOOMLIFT-60' TELESCOPIC 4WD DIESEL",   vendor: "Texas First",     unit: "TF-40218",  serial: "S60XC-330281",   job: "DFW10",    status: "active" },
-  { qr: "D5R1", desc: "SCISSORLIFT-19' ELECTRIC",             vendor: "Equipment Share", unit: "4420118",   serial: "GS1930-772904",  job: "DFW10",    status: "active" },
-  { qr: "E7T4", desc: "BOOMLIFT-45' ARTICULATING DIESEL",     vendor: "Opifex",          unit: "OPX-11877", serial: "Z45-25J-118773", job: "DFW10",    status: "active" },
-  { qr: "F1W8", desc: "SCISSORLIFT-40' RT DIESEL",            vendor: "Sunstate",        unit: "1044977",   serial: "GS4047-661209",  job: "DFW10",    status: "active" },
-
-  // DFW12
-  { qr: "G3P6", desc: "SCISSORLIFT-26' ELECTRIC",             vendor: "Sunstate",        unit: "1045102",   serial: "GS2646-118330",  job: "DFW12",    status: "active" },
-  { qr: "H9Q2", desc: "BOOMLIFT-40' ARTICULATING ELECTRIC",   vendor: "United Rentals",  unit: "7719688",   serial: "Z40N-220914",    job: "DFW12",    status: "active" },
-  { qr: "J4L7", desc: "MANLIFT-30' SELF PROP ELECTRIC",       vendor: "Texas First",     unit: "TF-40355",  serial: "S3013-772210",   job: "DFW12",    status: "active" },
-  { qr: "K6D8", desc: "SCISSORLIFT-32' RT DIESEL",            vendor: "Equipment Share", unit: "4420772",   serial: "GS3390-441027",  job: "DFW12",    status: "active" },
-  { qr: "M2N5", desc: "BOOMLIFT-80' TELESCOPIC DIESEL",       vendor: "Opifex",          unit: "OPX-12044", serial: "S80X-908812",    job: "DFW12",    status: "active" },
-  { qr: "N7V3", desc: "SCISSORLIFT-19' ELECTRIC",             vendor: "Sunstate",        unit: "1045338",   serial: "GS1930-330175",  job: "DFW12",    status: "active" },
-
-  // DFW10TFO
-  { qr: "P5B9", desc: "MANLIFT-25' SELF PROP ELECTRIC",       vendor: "United Rentals",  unit: "7719901",   serial: "GS2632-556104",  job: "DFW10TFO", status: "active" },
-  { qr: "Q8F4", desc: "SCISSORLIFT-40' RT DIESEL",            vendor: "Texas First",     unit: "TF-40492",  serial: "GS4047-220683",  job: "DFW10TFO", status: "active" },
-  { qr: "R3H6", desc: "BOOMLIFT-45' ARTICULATING DIESEL",     vendor: "Equipment Share", unit: "4421095",   serial: "Z45-25J-771248", job: "DFW10TFO", status: "active" }
-];
 
 // Friendly wording for each status code.
 const STATUS_LABEL = {
@@ -533,7 +509,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 34";
+const APP_VERSION = "build 35";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -994,19 +970,12 @@ function readSheetMachines() {
 function register() {
   const fromSheet = readSheetMachines();
 
-  // Once this phone has managed to reach the sheet even once, the sheet is
-  // the answer — including when the answer is "nothing". The sample lifts
-  // are only for a phone that has never got through, and an empty register
-  // is a real state, not a failure.
-  const heardFromSheet = Boolean(localStorage.getItem(REGISTER_AT));
-  const base = heardFromSheet ? fromSheet : MACHINES;
-
   const known = {};
-  base.forEach(m => { known[m.qr] = true; });
+  fromSheet.forEach(m => { known[m.qr] = true; });
 
   const mine = readLocalMachines().filter(m => !known[m.qr]);
 
-  return base.concat(mine);
+  return fromSheet.concat(mine);
 }
 
 
