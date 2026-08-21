@@ -533,7 +533,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 32";
+const APP_VERSION = "build 33";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -835,6 +835,95 @@ async function sendLifts() {
 }
 
 
+// ---------------------------------------------------------------------------
+// ASKING FOR EQUIPMENT
+//
+// Nothing to scan here — the machine being asked for is not on site yet. This
+// is a foreman telling the office what he needs, and it lands as an email
+// rather than sitting in a spreadsheet waiting to be noticed.
+// ---------------------------------------------------------------------------
+
+const REQUEST_STORE = "liftregister.requests";
+
+function readRequests() {
+  try {
+    return JSON.parse(localStorage.getItem(REQUEST_STORE)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function sendRequest() {
+  const warn = document.getElementById("reqWarn");
+  const val  = id => document.getElementById(id).value.trim();
+
+  const ask = {
+    id:        newId(),
+    name:      val("reqName"),
+    job:       val("reqJob"),
+    equipment: val("reqWhat"),
+    vendor:    val("reqVendor"),
+    at:        new Date().toISOString()
+  };
+
+  if (!ask.name) {
+    warn.textContent = "Put your name in first.";
+    return;
+  }
+
+  if (!ask.equipment) {
+    warn.textContent = "Say what you need.";
+    return;
+  }
+
+  warn.textContent = "";
+  localStorage.setItem(LAST_NAME, ask.name);
+  localStorage.setItem(LAST_PROJ, ask.job);
+
+  const waiting = readRequests();
+  waiting.push(ask);
+  localStorage.setItem(REQUEST_STORE, JSON.stringify(waiting));
+
+  // Same order as everything else: on the phone first, sent behind the
+  // screen. A request made in a hall goes out when he walks into signal.
+  requestSent = ask;
+  show(REQUEST);
+  updatePending();
+
+  pushRequests();
+}
+
+
+async function pushRequests() {
+  if (!navigator.onLine) return;
+
+  const waiting = readRequests().filter(r => !r.sent);
+  if (!waiting.length) return;
+
+  try {
+    const response = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ requests: waiting })
+    });
+
+    const result = await response.json();
+    if (!result.ok) return;
+
+    const landed = {};
+    (result.saved || []).forEach(id => { landed[id] = true; });
+
+    const all = readRequests();
+    all.forEach(r => { if (landed[r.id]) r.sent = true; });
+    localStorage.setItem(REQUEST_STORE, JSON.stringify(all));
+    updatePending();
+
+  } catch (err) {
+    // No signal. It waits.
+  }
+}
+
+
 function newId() {
   if (crypto.randomUUID) return crypto.randomUUID();
   return "s-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
@@ -850,6 +939,7 @@ function timeOf(scan) {
 // Read which screen the address bar is asking for. Null means the front.
 function idFromAddress() {
   const params = new URLSearchParams(window.location.search);
+  if (params.get("request")) return REQUEST;
   if (params.get("known")) return ALREADY;
   if (params.get("new")) return INTAKE;
   if (params.get("all")) return ALL_LIFTS;
@@ -964,7 +1054,50 @@ const app = document.getElementById("app");
 function show(code) {
   const machine = findMachine(code);
 
-  if (code === ALREADY) {
+  if (code === REQUEST) {
+    // Asking for a machine that is not on site yet. Nothing to scan, because
+    // the thing being asked for does not exist here.
+    const lastName    = localStorage.getItem(LAST_NAME) || "";
+    const lastProject = localStorage.getItem(LAST_PROJ) || "";
+
+    app.innerHTML = `
+      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
+
+      ${requestSent ? `
+        <div class="card recorded">
+          <p class="who">Request sent</p>
+          <p class="sub">${requestSent.equipment}</p>
+          <p class="sub">${requestSent.job} &middot; ${requestSent.vendor}
+          &middot; ${requestSent.name}</p>
+        </div>` : `
+        <div class="card form">
+          <label class="flabel" for="reqName">Your name</label>
+          <input class="finput" id="reqName" type="text" value="${lastName}"
+                 placeholder="First and last" autocomplete="off"
+                 autocapitalize="words" spellcheck="false">
+
+          <label class="flabel" for="reqJob">Job #</label>
+          <select class="finput" id="reqJob">
+            ${PROJECTS.map(j => `
+              <option ${j === lastProject ? "selected" : ""}>${j}</option>
+            `).join("")}
+          </select>
+
+          <label class="flabel" for="reqWhat">What equipment do you need?</label>
+          <textarea class="finput" id="reqWhat" rows="3"
+                    placeholder="Size, type, and what it's for"></textarea>
+
+          <label class="flabel" for="reqVendor">Preferred vendor</label>
+          <select class="finput" id="reqVendor">
+            <option>No preference</option>
+            ${VENDORS.map(v => `<option>${v}</option>`).join("")}
+          </select>
+
+          <p class="warn-text" id="reqWarn"></p>
+          <button class="btn" data-sendrequest>Send request</button>
+        </div>`}`;
+
+  } else if (code === ALREADY) {
     // Somebody tried to register a machine that is already in the register.
     // Opening the use form instead would be quietly doing something other
     // than what was asked for.
@@ -1066,6 +1199,7 @@ function show(code) {
       <button class="btn red" data-scan>SCAN A TAG</button>
       <button class="btn navy" data-all>ALL LIFTS</button>
       <button class="btn navy" data-intake>ADD A LIFT</button>
+      <button class="btn navy" data-request>SUBMIT EQUIPMENT REQUEST</button>
       ${scanListBlock()}`;
 
   } else if (!machine) {
@@ -1251,12 +1385,16 @@ function scanListBlock() {
 const ALL_LIFTS = "__all__";
 const INTAKE    = "__intake__";
 const ALREADY   = "__already__";
+const REQUEST   = "__request__";
 
 // The tag being registered, set by the scan that starts intake.
 let intakeCode = "";
 
 // A tag someone tried to register that is already in the register.
 let clashCode = "";
+
+// The equipment request just sent, so the screen can confirm it.
+let requestSent = null;
 
 // The vendors on this job. Same list as the register uses, so a machine
 // added at intake matches the ones already in it.
@@ -1269,10 +1407,12 @@ const VENDORS = [
 let depth = 0;
 
 function go(code) {
-  justSaved = null;   // a receipt belongs to the screen it was shown on
+  justSaved = null;     // a receipt belongs to the screen it was shown on
+  requestSent = null;
   depth++;
 
-  const address = code === ALREADY  ? "?known=1"
+  const address = code === REQUEST  ? "?request=1"
+                : code === ALREADY  ? "?known=1"
                 : code === INTAKE   ? "?new=1"
                 : code === ALL_LIFTS ? "?all=1"
                 : code               ? "?id=" + code
@@ -1544,6 +1684,16 @@ document.addEventListener("click", event => {
     addLift();
   }
 
+  if (event.target.closest("[data-request]")) {
+    event.preventDefault();
+    go(REQUEST);
+  }
+
+  if (event.target.closest("[data-sendrequest]")) {
+    event.preventDefault();
+    sendRequest();
+  }
+
   // A row in the all-lifts list. Handled here rather than letting the link
   // load a page, so it's instant and works with no signal.
   const row = event.target.closest("[data-go]");
@@ -1651,7 +1801,8 @@ async function sync() {
 // page body so it can update without wiping a form somebody is typing into.
 function updatePending() {
   const waiting = readScans().filter(scan => !scan.sent).length +
-                  readLocalMachines().filter(lift => !lift.sent).length;
+                  readLocalMachines().filter(lift => !lift.sent).length +
+                  readRequests().filter(ask => !ask.sent).length;
 
   document.getElementById("pending").textContent =
     waiting ? " · " + waiting + " waiting to send" : "";
@@ -1668,9 +1819,10 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
   sync();
   fetchRegister();
+  pushRequests();
 });
 
-window.addEventListener("online", () => { sync(); fetchRegister(); });
+window.addEventListener("online", () => { sync(); fetchRegister(); pushRequests(); });
 </script>
 </body>
 </html>
