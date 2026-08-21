@@ -294,9 +294,9 @@
     margin: 0 0 12px;
   }
 
-  /* Back, pinned to the top of the screen. With 150 lifts in a list, a link
-     at the bottom is a link nobody can reach. Sticky, so it stays put while
-     the list scrolls under it. */
+  /* Back, pinned to the top of the screen and sticky, so it stays put while
+     a long list scrolls under it. The only way back — there is no second one
+     at the bottom of the page. */
   .topbar {
     position: sticky;
     top: 0;
@@ -314,7 +314,6 @@
     text-decoration: none;
   }
 
-  .back { margin-top: 26px; font-size: 15px; }
 
   /* ---- camera overlay ----------------------------------------------------
      Covers the whole screen while scanning. Black, because anything else
@@ -501,7 +500,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 27";
+const APP_VERSION = "build 28";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -717,8 +716,7 @@ function show(code) {
         <p>Tag <strong>${code}</strong> isn't in the register.
         It may not have been checked in yet.</p>
       </div>
-      <button class="btn secondary" data-scan>Scan another tag</button>
-      <p class="note back"><a href="#" data-back>BACK</a></p>`;
+      <button class="btn secondary" data-scan>Scan another tag</button>`;
 
   } else {
     // Found it. Show the machine.
@@ -757,8 +755,7 @@ function show(code) {
         </dl>
       </div>
       ${useBlock(machine)}
-      <button class="btn secondary" data-scan>Scan another tag</button>
-      <p class="note back"><a href="#" data-back>BACK</a></p>`;
+      <button class="btn secondary" data-scan>Scan another tag</button>`;
   }
 }
 
