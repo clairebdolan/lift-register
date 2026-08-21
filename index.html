@@ -49,12 +49,18 @@
 
   .wrap { max-width: 520px; margin: 0 auto; }
 
-  /* Menu on the left, then the title. */
+  /* A navy band across the top: the way back on the left, the name beside
+     it. Sticky, so on a list of 150 lifts the way out is always one tap. */
   .head {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 18px;
+    gap: 14px;
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    background: var(--navy);
+    margin: -20px -18px 20px;      /* out to the screen edges */
+    padding: 15px 18px;
   }
 
   /* ---- the menu drawer --------------------------------------------------- */
@@ -104,10 +110,10 @@
   .menubtn {
     border: none;
     background: none;
-    color: var(--navy);
+    color: #fff;
     font-size: 26px;
     line-height: 1;
-    padding: 4px 2px;
+    padding: 2px 2px;
   }
 
   .brand {
@@ -115,7 +121,7 @@
     font-size: 16px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--navy);
+    color: #fff;
   }
 
   .card {
@@ -387,26 +393,6 @@
     margin: 0 0 12px;
   }
 
-  /* Back, pinned to the top of the screen and sticky, so it stays put while
-     a long list scrolls under it. The only way back — there is no second one
-     at the bottom of the page. */
-  .topbar {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    margin: -20px -18px 16px;      /* out to the screen edges */
-    padding: 13px 18px;
-    background: var(--bg);
-    border-bottom: 1px solid var(--line);
-  }
-  .topbar a {
-    font-family: var(--mono);
-    font-size: 13px;
-    letter-spacing: 0.1em;
-    font-weight: 600;
-    text-decoration: none;
-  }
-
 
   /* ---- camera overlay ----------------------------------------------------
      Covers the whole screen while scanning. Black, because anything else
@@ -483,7 +469,7 @@
 <body>
 <div class="wrap">
   <div class="head">
-    <button class="menubtn" data-menu aria-label="Menu">&#9776;</button>
+    <button class="menubtn" id="headbtn" data-menu aria-label="Menu">&#9776;</button>
     <div class="brand">Lift Register</div>
   </div>
 
@@ -609,7 +595,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 44";
+const APP_VERSION = "build 45";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -1291,6 +1277,23 @@ const app = document.getElementById("app");
 function show(code) {
   const machine = findMachine(code);
 
+  // The button in the navy band does one of two jobs. On the front screen it
+  // opens the menu; anywhere else it is the way back. Same place, same size,
+  // so the thumb learns one target.
+  const headbtn = document.getElementById("headbtn");
+
+  if (!code) {
+    headbtn.innerHTML = "&#9776;";
+    headbtn.setAttribute("data-menu", "");
+    headbtn.removeAttribute("data-back");
+    headbtn.setAttribute("aria-label", "Menu");
+  } else {
+    headbtn.innerHTML = "&#8592;";
+    headbtn.setAttribute("data-back", "");
+    headbtn.removeAttribute("data-menu");
+    headbtn.setAttribute("aria-label", "Back");
+  }
+
   if (code === PENDING) {
     // Everything this phone is still holding. Somewhere to look when the
     // footer says something is waiting and you want to know what.
@@ -1300,8 +1303,6 @@ function show(code) {
     const total    = scans.length + machines.length + asks.length;
 
     app.innerHTML = `
-      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
-
       ${total ? `
         <p class="lede">${total} ${total === 1 ? "thing" : "things"} on this
         phone haven't reached the sheet yet. They go on their own when there's
@@ -1340,8 +1341,6 @@ function show(code) {
     const lastName = localStorage.getItem(LAST_NAME) || "";
 
     app.innerHTML = `
-      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
-
       ${supportSent ? `
         <div class="card recorded">
           <p class="who">Sent. Thanks.</p>
@@ -1376,7 +1375,6 @@ function show(code) {
 
   } else if (code === RECENT) {
     app.innerHTML = `
-      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
       ${scanListBlock() || `<p class="lede">No scans recorded on this phone yet.</p>`}`;
 
   } else if (code === REQUEST) {
@@ -1386,8 +1384,6 @@ function show(code) {
     const lastProject = localStorage.getItem(LAST_PROJ) || "";
 
     app.innerHTML = `
-      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
-
       ${requestSent ? `
         <div class="card recorded">
           <p class="who">Request sent</p>
@@ -1429,8 +1425,6 @@ function show(code) {
     const known = findMachine(clashCode);
 
     app.innerHTML = `
-      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
-
       <div class="card errorcard">
         <p class="errorhead">ERROR</p>
         <h1>This lift is already registered</h1>
@@ -1448,8 +1442,6 @@ function show(code) {
     const lastName = localStorage.getItem(LAST_NAME) || "";
 
     app.innerHTML = `
-      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
-
       <div class="card form">
         <p class="taghead">NEW TAG <strong>${intakeCode}</strong></p>
 
@@ -1507,7 +1499,6 @@ function show(code) {
     // Every lift on the job, searchable. This is the office's way in, and
     // the way to reach a machine whose tag is damaged.
     app.innerHTML = `
-      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
       <select class="find" id="jobFilter">
         <option value="">All jobs</option>
         ${PROJECTS.map(j => `<option>${j}</option>`).join("")}
@@ -1534,13 +1525,12 @@ function show(code) {
         </div>` : ""}
       <button class="btn red" data-scan>SCAN A TAG</button>
       <button class="btn navy" data-all>ALL LIFTS</button>
-      <button class="btn navy" data-intake>ADD A LIFT</button>
+      <button class="btn navy" data-intake>ADD EQUIPMENT</button>
       <button class="btn navy" data-request>SUBMIT EQUIPMENT REQUEST</button>`;
 
   } else if (!machine) {
     // A code came back but it isn't one we know.
     app.innerHTML = `
-      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
       <div class="card missing">
         <h1>Machine not found</h1>
         <p>Tag <strong>${code}</strong> isn't in the register.
@@ -1551,7 +1541,6 @@ function show(code) {
   } else {
     // Found it. Show the machine.
     app.innerHTML = `
-      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
       <div class="card">
         <div class="card-top">
           <h1>${machine.desc}</h1>
