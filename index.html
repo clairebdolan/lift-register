@@ -13,8 +13,10 @@
     --ink-2: #566063;
     --ink-3: #869092;
     --line: #D3D8D5;
-    --accent: #1B6873;
-    --serial: #8A3F2B;
+    --accent: #1B6873;   /* teal */
+    --navy:   #14294B;   /* company navy */
+    --navy-2: #0E1D36;   /* navy, pressed */
+    --serial: #8A3F2B;   /* company red */
     --good: #2E6B45;
     --good-bg: #DCEBE2;
     --warn: #8A5A17;
@@ -40,8 +42,8 @@
 
   .brand {
     font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.16em;
+    font-size: 16px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--accent);
     margin-bottom: 18px;
@@ -248,6 +250,12 @@
     font-weight: 600;
   }
   .btn:active { background: #14525B; }
+
+  /* Navy is the company colour and the main action. Teal is the second one —
+     still a full bar, still obvious, just not the thing you came here for. */
+  .btn.navy         { background: var(--navy); }
+  .btn.navy:active  { background: var(--navy-2); }
+
   .btn.secondary {
     margin-top: 18px;
     margin-bottom: 0;
@@ -255,6 +263,29 @@
     color: var(--accent);
     border: 1px solid var(--line);
   }
+
+  /* Search box on the all-lifts screen. Same 17px rule as the form — smaller
+     and the phone zooms the page when you tap it. */
+  .find {
+    display: block;
+    width: 100%;
+    padding: 14px 14px;
+    margin-bottom: 14px;
+    font-family: inherit;
+    font-size: 17px;
+    color: var(--ink);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+
+  .count {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin: 0 0 12px;
+  }
+
+  .back { margin-top: 26px; font-size: 15px; }
 
   /* ---- camera overlay ----------------------------------------------------
      Covers the whole screen while scanning. Black, because anything else
@@ -427,7 +458,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 16";
+const APP_VERSION = "build 17";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -578,9 +609,11 @@ function timeOf(scan) {
 }
 
 
-// Read the machine code out of the address bar. Null if there isn't one.
+// Read which screen the address bar is asking for. Null means the front.
 function idFromAddress() {
-  return new URLSearchParams(window.location.search).get("id");
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("all")) return ALL_LIFTS;
+  return params.get("id");
 }
 
 // Look through the list for a machine whose qr code matches.
@@ -602,24 +635,22 @@ const app = document.getElementById("app");
 function show(code) {
   const machine = findMachine(code);
 
-  if (!code) {
-    // Nothing scanned — someone opened the plain address.
-    // The list below is scaffolding for testing without a printed tag.
+  if (code === ALL_LIFTS) {
+    // Every lift on the job, searchable. This is the office's way in, and
+    // the way to reach a machine whose tag is damaged.
     app.innerHTML = `
-      <button class="btn" data-scan>Scan a tag</button>
-      <p class="lede">Or pick one to preview what an operator sees after
-      scanning its tag.</p>
-      <div class="list">
-        ${MACHINES.map(m => `
-          <a href="?id=${m.qr}">
-            <span>
-              <span class="lbl">${m.desc}</span><br>
-              <span class="sub">${m.vendor} &middot; ${m.unit}</span>
-            </span>
-            <span class="qr">${m.qr}</span>
-          </a>
-        `).join("")}
-      </div>
+      <input class="find" id="find" type="search" autocomplete="off"
+             placeholder="Search by unit number" autocapitalize="characters">
+      <div id="lifts"></div>
+      <p class="note back"><a href="#" data-back>Back</a></p>`;
+
+    drawLifts("");
+
+  } else if (!code) {
+    // The way in. Two bars and nothing else to read.
+    app.innerHTML = `
+      <button class="btn navy" data-scan>Scan a tag</button>
+      <button class="btn" data-all>See all lifts</button>
       ${scanListBlock()}`;
 
   } else if (!machine) {
@@ -631,7 +662,7 @@ function show(code) {
         It may not have been checked in yet.</p>
       </div>
       <button class="btn secondary" data-scan>Scan another tag</button>
-      <p class="note"><a href="?">See all machines</a></p>`;
+      <p class="note back"><a href="#" data-back>Back</a></p>`;
 
   } else {
     // Found it. Show the machine.
@@ -665,7 +696,7 @@ function show(code) {
       </div>
       ${useBlock(machine)}
       <button class="btn secondary" data-scan>Scan another tag</button>
-      <p class="note"><a href="?">See all machines</a></p>`;
+      <p class="note back"><a href="#" data-back>Back</a></p>`;
   }
 }
 
@@ -785,10 +816,66 @@ function scanListBlock() {
 // Change which machine is on screen without reloading the page. The address
 // bar is updated to match, so the back button behaves and the address can be
 // shared — but nothing is fetched, which is what keeps this working offline.
+// The name for the all-lifts screen. Not a machine code, so it can travel
+// through the same routing as one.
+const ALL_LIFTS = "__all__";
+
+// How many screens deep into the app we are, so Back knows whether there is
+// anywhere to go back to.
+let depth = 0;
+
 function go(code) {
   justSaved = null;   // a receipt belongs to the screen it was shown on
-  history.pushState({}, "", code ? "?id=" + code : "./");
+  depth++;
+
+  const address = code === ALL_LIFTS ? "?all=1"
+                : code               ? "?id=" + code
+                :                      "./";
+
+  history.pushState({}, "", address);
   show(code);
+}
+
+// Back out of a screen. Uses the phone's own back where there is history to
+// use — so a lift opened from the list returns to the list, with the search
+// still in it — and falls back to the front screen when the app was opened
+// straight onto a machine by scanning its tag.
+function goBack() {
+  if (depth > 0) {
+    depth--;
+    history.back();
+  } else {
+    history.replaceState({}, "", "./");
+    show(null);
+  }
+}
+
+
+// The rows on the all-lifts screen. Drawn separately from the screen itself
+// so typing in the search box redraws the list without touching the box —
+// otherwise the keyboard closes on every letter.
+function drawLifts(term) {
+  const needle = term.trim().toLowerCase();
+
+  const found = MACHINES.filter(m =>
+    !needle ||
+    m.unit.toLowerCase().includes(needle) ||
+    m.desc.toLowerCase().includes(needle)
+  );
+
+  document.getElementById("lifts").innerHTML = `
+    <p class="count">${found.length} of ${MACHINES.length} lifts</p>
+    <div class="list">
+      ${found.map(m => `
+        <a href="?id=${m.qr}" data-go="${m.qr}">
+          <span>
+            <span class="lbl">${m.desc}</span><br>
+            <span class="sub">${m.vendor} &middot; Unit ${m.unit}</span>
+          </span>
+        </a>
+      `).join("")}
+    </div>
+    ${found.length ? "" : `<p class="lede">No lift with that unit number.</p>`}`;
 }
 
 // Draw whatever the address bar says, now and whenever the back button moves.
@@ -969,6 +1056,24 @@ function codeFromScan(text) {
 document.addEventListener("click", event => {
   if (event.target.closest("[data-scan]")) startScan();
 
+  if (event.target.closest("[data-all]")) {
+    event.preventDefault();
+    go(ALL_LIFTS);
+  }
+
+  // A row in the all-lifts list. Handled here rather than letting the link
+  // load a page, so it's instant and works with no signal.
+  const row = event.target.closest("[data-go]");
+  if (row) {
+    event.preventDefault();
+    go(row.getAttribute("data-go"));
+  }
+
+  if (event.target.closest("[data-back]")) {
+    event.preventDefault();
+    goBack();
+  }
+
   const record = event.target.closest("[data-record]");
   if (record) recordScan(record.getAttribute("data-record"));
 
@@ -978,6 +1083,11 @@ document.addEventListener("click", event => {
     localStorage.removeItem(SCAN_STORE);
     show(idFromAddress());
   }
+});
+
+// Typing in the search box on the all-lifts screen.
+document.addEventListener("input", event => {
+  if (event.target.id === "find") drawLifts(event.target.value);
 });
 
 document.addEventListener("change", event => {
