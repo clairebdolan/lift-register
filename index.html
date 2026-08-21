@@ -45,7 +45,7 @@
     font-size: 16px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--accent);
+    color: var(--navy);
     margin-bottom: 18px;
   }
 
@@ -100,7 +100,7 @@
     border-left: 4px solid transparent;
   }
   .row:last-child { border-bottom: none; }
-  .row.unit   { border-left-color: var(--accent); }
+  .row.unit   { border-left-color: var(--navy); }
   .row.serial { border-left-color: var(--serial); }
 
   .row .k {
@@ -115,7 +115,7 @@
     word-break: break-word;
   }
   .row .v.mono { font-family: var(--mono); font-size: 19px; letter-spacing: 0.02em; }
-  .row.unit   .v { color: var(--accent); }
+  .row.unit   .v { color: var(--navy); }
   .row.serial .v { color: var(--serial); }
 
   /* Says where the number comes from, so nobody reads the wrong one off
@@ -134,7 +134,7 @@
     color: var(--ink-2);
   }
 
-  a { color: var(--accent); }
+  a { color: var(--navy); }
 
   /* the list you see when no machine is specified */
   .list { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
@@ -243,16 +243,16 @@
     margin-bottom: 18px;
     border: none;
     border-radius: 4px;
-    background: var(--accent);
+    background: var(--navy);
     color: #fff;
     font-family: inherit;
     font-size: 18px;
     font-weight: 600;
   }
-  .btn:active { background: #14525B; }
+  .btn:active { background: var(--navy-2); }
 
-  /* Navy is the company colour and the main action. Teal is the second one —
-     still a full bar, still obvious, just not the thing you came here for. */
+  /* Every button is navy now. The class is kept so the markup does not have
+     to change if a second colour is ever wanted. */
   .btn.navy         { background: var(--navy); }
   .btn.navy:active  { background: var(--navy-2); }
 
@@ -260,7 +260,7 @@
     margin-top: 18px;
     margin-bottom: 0;
     background: transparent;
-    color: var(--accent);
+    color: var(--navy);
     border: 1px solid var(--line);
   }
 
@@ -458,7 +458,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 20";
+const APP_VERSION = "build 21";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -649,8 +649,8 @@ function show(code) {
   } else if (!code) {
     // The way in. Two bars and nothing else to read.
     app.innerHTML = `
-      <button class="btn navy" data-scan>Scan a tag</button>
-      <button class="btn navy" data-all>All Lifts</button>
+      <button class="btn navy" data-scan>SCAN A TAG</button>
+      <button class="btn navy" data-all>ALL LIFTS</button>
       ${scanListBlock()}`;
 
   } else if (!machine) {
@@ -870,7 +870,7 @@ function drawLifts(term) {
         <a href="?id=${m.qr}" data-go="${m.qr}">
           <span>
             <span class="lbl">${m.desc}</span><br>
-            <span class="sub">${m.vendor} &middot; Unit ${m.unit}</span>
+            <span class="sub">Vendor: ${m.vendor}<br>Unit #${m.unit}</span>
           </span>
         </a>
       `).join("")}
