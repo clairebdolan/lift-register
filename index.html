@@ -14,8 +14,8 @@
     --ink-3: #869092;
     --line: #D3D8D5;
     --accent: #1B6873;   /* teal */
-    --navy:   #14294B;   /* company navy */
-    --navy-2: #0E1D36;   /* navy, pressed */
+    --navy:   #13406A;   /* company navy */
+    --navy-2: #0E3152;   /* navy, pressed */
     --serial: #8A3F2B;   /* company red */
     --good: #2E6B45;
     --good-bg: #DCEBE2;
@@ -458,7 +458,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 17";
+const APP_VERSION = "build 18";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -650,7 +650,7 @@ function show(code) {
     // The way in. Two bars and nothing else to read.
     app.innerHTML = `
       <button class="btn navy" data-scan>Scan a tag</button>
-      <button class="btn" data-all>See all lifts</button>
+      <button class="btn navy" data-all>All Lifts</button>
       ${scanListBlock()}`;
 
   } else if (!machine) {
