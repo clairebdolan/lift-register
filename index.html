@@ -595,7 +595,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 45";
+const APP_VERSION = "build 46";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -1500,7 +1500,8 @@ function show(code) {
     // the way to reach a machine whose tag is damaged.
     app.innerHTML = `
       <select class="find" id="jobFilter">
-        <option value="">All jobs</option>
+        <option value="">Sort by Job #</option>
+        <option value="ALL">All Jobs</option>
         ${PROJECTS.map(j => `<option>${j}</option>`).join("")}
       </select>
       <input class="find" id="find" type="search" autocomplete="off"
@@ -1789,9 +1790,18 @@ function drawLifts() {
   const needle = (document.getElementById("find").value || "").trim().toLowerCase();
   const job    = document.getElementById("jobFilter").value;
 
+  // Nothing chosen and nothing typed: show nothing. A hundred and forty lifts
+  // in one list is not a starting point, it is a wall.
+  if (!job && !needle) {
+    document.getElementById("lifts").innerHTML = `
+      <p class="lede">Choose a job to see its lifts, or search for a unit or
+      serial number.</p>`;
+    return;
+  }
+
   const all   = register();
   const found = all.filter(m => {
-    if (job && m.job !== job) return false;
+    if (job && job !== "ALL" && m.job !== job) return false;
 
     return !needle ||
       m.unit.toLowerCase().includes(needle) ||
@@ -1801,9 +1811,10 @@ function drawLifts() {
   });
 
   document.getElementById("lifts").innerHTML = `
-    <p class="count">${found.length} of ${all.length} lifts &middot; ${registerAge()}</p>
+    <p class="count">${found.length} ${found.length === 1 ? "lift" : "lifts"}
+    &middot; ${registerAge()}</p>
     ${all.length ? "" : `<p class="lede">The register is empty. Add machines in the
-      Machines tab of the sheet, or tag one with ADD A LIFT.</p>`}
+      Machines tab of the sheet, or tag one with ADD EQUIPMENT.</p>`}
     <div class="list">
       ${found.map(m => `
         <a href="?id=${m.qr}" data-go="${m.qr}">
