@@ -15,7 +15,7 @@
 // The name of the storage container on the phone. Change the version number
 // whenever the file list below changes — the phone treats a new name as a
 // brand new container and throws the old one out.
-const CACHE = "lift-register-v8";
+const CACHE = "lift-register-v9";
 
 // The files the app needs in order to start at all.
 const SHELL = [
@@ -74,9 +74,18 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   const request = event.request;
 
-  // Only reads. Nothing is being sent to a server yet, but when the scan form
-  // exists this line keeps us from trying to cache a submission.
+  // Only reads. A submission is never cached.
   if (request.method !== "GET") return;
+
+  // Only OUR files. Anything on another server — the Google Sheet the
+  // register is read from, above all — goes straight to the network.
+  //
+  // Without this line the register feed gets stored like any other file, and
+  // the app is handed a frozen copy of the machine list for as long as that
+  // stored answer survives. It looks exactly like a phone that is syncing
+  // happily: the fetch succeeds, the time updates, and the machines never
+  // change.
+  if (new URL(request.url).origin !== self.location.origin) return;
 
   // A scan opens an address ending in ?id=A4X7. Every machine is a different
   // address, but they are all the SAME page — the id is read by the script
