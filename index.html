@@ -49,12 +49,76 @@
 
   .wrap { max-width: 520px; margin: 0 auto; }
 
-  /* Title on the left, menu on the right. */
+  /* Menu on the left, then the title. */
   .head {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 12px;
     margin-bottom: 18px;
+  }
+
+  /* ---- the menu drawer --------------------------------------------------- */
+  .drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+  }
+  .drawer[hidden] { display: none; }
+
+  .drawerpane {
+    width: 74%;
+    max-width: 320px;
+    background: var(--card);
+    padding: 26px 22px;
+    box-shadow: 0 0 30px rgba(0,0,0,0.25);
+    overflow-y: auto;
+  }
+
+  /* The rest of the app, dimmed. Tapping it closes the menu. */
+  .drawerback { flex: 1; background: rgba(0,0,0,0.35); }
+
+  .drawerhead { margin-bottom: 22px; }
+  .drawericon {
+    width: 46px;
+    height: 46px;
+    border-radius: 11px;
+    display: block;
+    margin-bottom: 12px;
+  }
+  .drawername {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .drawersub {
+    margin: 2px 0 0;
+    font-size: 14px;
+    color: var(--ink-3);
+  }
+
+  /* Plain rows. No boxes — the icon and the word are the whole thing. */
+  .drawernav a {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 15px 0;
+    font-size: 17px;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .drawernav a:active { color: var(--navy); }
+
+  .drawernav svg {
+    width: 23px;
+    height: 23px;
+    flex: none;
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .menubtn {
@@ -439,14 +503,57 @@
 <body>
 <div class="wrap">
   <div class="head">
-    <div class="brand">Lift Register</div>
     <button class="menubtn" data-menu aria-label="Menu">&#9776;</button>
+    <div class="brand">Lift Register</div>
   </div>
 
   <!-- Everything below gets filled in by the script at the bottom. -->
   <div id="app"></div>
 
   <footer>Prototype &middot; <span id="version"></span><span id="pending"></span></footer>
+</div>
+
+<!-- The menu. Slides over the left of the screen; the rest of the app stays
+     visible but dimmed behind it, so it reads as a thing on top rather than
+     a place you have gone. Tapping the dimmed part closes it. -->
+<div class="drawer" id="drawer" hidden>
+  <div class="drawerpane">
+    <div class="drawerhead">
+      <img class="drawericon" src="icon-lr-2.png" alt="">
+      <p class="drawername">Lift Register</p>
+      <p class="drawersub" id="drawersub"></p>
+    </div>
+
+    <nav class="drawernav">
+      <a href="#" data-go-pending>
+        <!-- cloud with an arrow going up: things on their way out -->
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 18a4 4 0 0 1-.4-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18H7z"/>
+          <path d="M12 15V9"/>
+          <path d="M9.5 11.5 12 9l2.5 2.5"/>
+        </svg>
+        Pending Uploads
+      </a>
+
+      <a href="#" data-go-recent>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/>
+        </svg>
+        Recorded equipment
+      </a>
+
+      <a href="#" data-go-support>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M9.6 9.6a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2-2.4 3.5"/>
+          <path d="M12 17.2v.01"/>
+        </svg>
+        Support
+      </a>
+    </nav>
+  </div>
+
+  <div class="drawerback" data-closedrawer></div>
 </div>
 
 <!-- The camera. Hidden until Scan is tapped, then it covers everything.
@@ -528,7 +635,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 42";
+const APP_VERSION = "build 43";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -865,6 +972,104 @@ async function sendLifts() {
 
 
 // ---------------------------------------------------------------------------
+// THE MENU DRAWER
+// ---------------------------------------------------------------------------
+
+const drawer = document.getElementById("drawer");
+
+function toggleDrawer() {
+  if (drawer.hidden) openDrawer(); else closeDrawer();
+}
+
+function openDrawer() {
+  const waiting = pendingCount();
+
+  document.getElementById("drawersub").textContent =
+    waiting ? waiting + " waiting to send" : "Everything sent";
+
+  drawer.hidden = false;
+  sendAll();      // opening the menu is a fair moment to try the queue again
+}
+
+function closeDrawer() {
+  drawer.hidden = true;
+}
+
+
+// ---------------------------------------------------------------------------
+// SUPPORT
+//
+// Somebody telling us the app is wrong. It goes to Claire by email, because
+// a complaint sitting in a spreadsheet is a complaint nobody answers.
+// ---------------------------------------------------------------------------
+
+const SUPPORT_STORE = "liftregister.support";
+
+function readSupport() {
+  try {
+    return JSON.parse(localStorage.getItem(SUPPORT_STORE)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function sendSupport() {
+  const warn = document.getElementById("supWarn");
+  const val  = id => document.getElementById(id).value.trim();
+
+  const note = {
+    id:      newId(),
+    name:    val("supName"),
+    message: val("supWhat"),
+    build:   APP_VERSION,          // which version they were looking at
+    at:      new Date().toISOString()
+  };
+
+  if (!note.message) {
+    warn.textContent = "Say what's wrong and we'll look at it.";
+    return;
+  }
+
+  warn.textContent = "";
+  if (note.name) localStorage.setItem(LAST_NAME, note.name);
+
+  const waiting = readSupport();
+  waiting.push(note);
+  localStorage.setItem(SUPPORT_STORE, JSON.stringify(waiting));
+
+  supportSent = note;
+  show(SUPPORT);
+  updatePending();
+
+  pushSupport();
+}
+
+
+async function pushSupport() {
+  if (!navigator.onLine) return;
+
+  const waiting = readSupport().filter(n => !n.sent);
+  if (!waiting.length) return;
+
+  try {
+    const result = await postToSheet({ support: waiting });
+    if (!result.ok) return;
+
+    const landed = {};
+    (result.saved || []).forEach(id => { landed[id] = true; });
+
+    const all = readSupport();
+    all.forEach(n => { if (landed[n.id]) n.sent = true; });
+    localStorage.setItem(SUPPORT_STORE, JSON.stringify(all));
+    updatePending();
+
+  } catch (err) {
+    // No signal. It waits, like everything else.
+  }
+}
+
+
+// ---------------------------------------------------------------------------
 // ASKING FOR EQUIPMENT
 //
 // Nothing to scan here — the machine being asked for is not on site yet. This
@@ -962,6 +1167,7 @@ function timeOf(scan) {
 // Read which screen the address bar is asking for. Null means the front.
 function idFromAddress() {
   const params = new URLSearchParams(window.location.search);
+  if (params.get("support")) return SUPPORT;
   if (params.get("menu")) return MENU;
   if (params.get("pending")) return PENDING;
   if (params.get("recent")) return RECENT;
@@ -1160,6 +1366,31 @@ function show(code) {
 
         <button class="btn navy" data-sendnow>Send now</button>`
       : `<p class="lede">No pending uploads.</p>`}`;
+
+  } else if (code === SUPPORT) {
+    const lastName = localStorage.getItem(LAST_NAME) || "";
+
+    app.innerHTML = `
+      <div class="topbar"><a href="#" data-back>&larr; BACK</a></div>
+
+      ${supportSent ? `
+        <div class="card recorded">
+          <p class="who">Sent. Thanks.</p>
+          <p class="sub">${supportSent.message}</p>
+        </div>` : `
+        <div class="card form">
+          <label class="flabel" for="supName">Your name</label>
+          <input class="finput" id="supName" type="text" value="${lastName}"
+                 placeholder="First and last" autocomplete="off"
+                 autocapitalize="words" spellcheck="false">
+
+          <label class="flabel" for="supWhat">What's the problem?</label>
+          <textarea class="finput" id="supWhat" rows="5"
+                    placeholder="What you were doing and what happened"></textarea>
+
+          <p class="warn-text" id="supWarn"></p>
+          <button class="btn" data-sendsupport>Send</button>
+        </div>`}`;
 
   } else if (code === MENU) {
     app.innerHTML = `
@@ -1526,6 +1757,7 @@ const REQUEST   = "__request__";
 const MENU      = "__menu__";
 const PENDING   = "__pending__";
 const RECENT    = "__recent__";
+const SUPPORT   = "__support__";
 
 // The tag being registered, set by the scan that starts intake.
 let intakeCode = "";
@@ -1538,6 +1770,9 @@ let requestSent = null;
 
 // The machine just added, so the front screen can confirm it.
 let justAdded = null;
+
+// The support note just sent, so that screen can confirm it.
+let supportSent = null;
 
 // The vendors on this job. Same list as the register uses, so a machine
 // added at intake matches the ones already in it.
@@ -1559,7 +1794,8 @@ function go(code) {
   // to see whether their scan went.
   if (!code || code === MENU || code === PENDING) sendAll();
 
-  const address = code === MENU     ? "?menu=1"
+  const address = code === SUPPORT  ? "?support=1"
+                : code === MENU     ? "?menu=1"
                 : code === PENDING  ? "?pending=1"
                 : code === RECENT   ? "?recent=1"
                 : code === REQUEST  ? "?request=1"
@@ -1838,21 +2074,39 @@ document.addEventListener("click", event => {
     addLift();
   }
 
+  // The hamburger opens the menu and closes it again — nobody should have to
+  // hunt for a back arrow to undo a tap on the same button.
   if (event.target.closest("[data-menu]")) {
     event.preventDefault();
-    // The hamburger opens the menu and closes it again — nobody should have
-    // to hunt for a back arrow to undo a tap on the same button.
-    if (idFromAddress() === MENU) goBack(); else go(MENU);
+    toggleDrawer();
+  }
+
+  if (event.target.closest("[data-closedrawer]")) {
+    event.preventDefault();
+    closeDrawer();
   }
 
   if (event.target.closest("[data-go-pending]")) {
     event.preventDefault();
+    closeDrawer();
     go(PENDING);
   }
 
   if (event.target.closest("[data-go-recent]")) {
     event.preventDefault();
+    closeDrawer();
     go(RECENT);
+  }
+
+  if (event.target.closest("[data-go-support]")) {
+    event.preventDefault();
+    closeDrawer();
+    go(SUPPORT);
+  }
+
+  if (event.target.closest("[data-sendsupport]")) {
+    event.preventDefault();
+    sendSupport();
   }
 
   if (event.target.closest("[data-sendnow]")) {
@@ -1979,6 +2233,7 @@ async function sendAll() {
   await sync();
   await sendLifts();
   await pushRequests();
+  await pushSupport();
 }
 
 
@@ -2020,7 +2275,8 @@ async function sync() {
 function pendingCount() {
   return readScans().filter(scan => !scan.sent).length +
          readLocalMachines().filter(lift => !lift.sent).length +
-         readRequests().filter(ask => !ask.sent).length;
+         readRequests().filter(ask => !ask.sent).length +
+         readSupport().filter(note => !note.sent).length;
 }
 
 
