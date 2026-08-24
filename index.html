@@ -720,7 +720,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 55";
+const APP_VERSION = "build 57";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -886,11 +886,14 @@ function recordScan(code) {
     day: today(),
 
     // Carried along so the sheet reads on its own, without anyone having to
-    // look up what tag C8M3 is.
+    // look up what tag C8M3 is. Nobody types any of this — it is copied off
+    // the machine's row in the register as the scan goes past, which is the
+    // only way it can be right.
     desc:   machine.desc   || "",
     vendor: machine.vendor || "",
     unit:   machine.unit   || "",
     serial: machine.serial || "",
+    po:     machine.po     || "",
 
     sent: false
   };
@@ -948,16 +951,27 @@ async function addLift() {
     return;
   }
 
-  // Same serial on two tags means one machine has been registered twice, and
-  // the serial is the one number that cannot be duplicated.
-  const clash = register().find(m =>
-    m.serial && m.serial.toLowerCase() === lift.serial.toLowerCase()
+  // Is this machine already in the register?
+  //
+  // Usually that is a mistake worth stopping. But now that lifts with no tag
+  // are in the register too, it is also the ordinary way a machine gets its
+  // first tag: somebody sticks one on, scans it, and fills in this form. The
+  // difference is whether the lift we already have is carrying a code.
+  const already = register().find(m =>
+    (m.unit   && m.unit.toLowerCase()   === lift.unit.toLowerCase()) ||
+    (m.serial && m.serial.toLowerCase() === lift.serial.toLowerCase())
   );
-  if (clash) {
+
+  if (already && already.qr) {
     warn.textContent =
-      "Serial " + lift.serial + " is already in the register on tag " + clash.qr + ".";
+      "Unit #" + already.unit + " is already in the register on tag " + already.qr + ".";
     return;
   }
+
+  // It is in the register with no tag, so this is a tagging rather than a new
+  // machine. Nothing more to do here — the sheet matches on the unit number
+  // when it arrives and writes the code onto the row that is already there,
+  // rather than making a second one.
 
   warn.textContent = "";
 
@@ -1047,11 +1061,23 @@ async function sendLifts() {
     const landed = {};
     (result.saved || []).forEach(id => { landed[id] = true; });
 
+    // The sheet can refuse a lift now that it merges them onto rows that
+    // already exist — two rows with the same unit number, or a unit already
+    // wearing a different tag. Sending it again would get the same answer,
+    // so it stops and says why.
+    const why = {};
+    (result.refused || []).forEach(r => { why[r.id] = r.why; });
+
     const local = readLocalMachines();
     local.forEach(m => {
       if (landed[m.id]) {
         m.sent = true;
         delete m.photo;   // the sheet has it now; no need to carry it around
+      }
+      if (why[m.id]) {
+        m.sent = true;
+        m.problem = why[m.id];
+        delete m.photo;
       }
     });
     localStorage.setItem(LOCAL_MACHINES, JSON.stringify(local));
@@ -1265,10 +1291,28 @@ function idFromAddress() {
   return params.get("id");
 }
 
-// Look through the list for a machine whose qr code matches.
+// How a machine is addressed.
+//
+// Normally that is its tag. A lift with no tag on it yet still has to be
+// reachable — you can look it up, read it, and see that it is waiting for a
+// code — so it borrows its unit number instead, as U-147389. Nothing is
+// stored under that name; it exists only so a screen has something to be.
+function keyOf(machine) {
+  if (machine.qr) return machine.qr;
+
+  const unit = String(machine.unit || "").replace(/[^A-Za-z0-9]/g, "");
+  if (unit) return "U-" + unit.toUpperCase();
+
+  const serial = String(machine.serial || "").replace(/[^A-Za-z0-9]/g, "");
+  return serial ? "S-" + serial.toUpperCase() : "";
+}
+
+
+// Look through the list for a machine whose tag — or stand-in key — matches.
 // toUpperCase() so a lowercase a4x7 still works.
 function findMachine(code) {
-  return register().find(m => m.qr === (code || "").toUpperCase());
+  const want = (code || "").toUpperCase();
+  return register().find(m => m.qr === want || keyOf(m) === want);
 }
 
 
@@ -1386,7 +1430,7 @@ function register() {
   const known = {};
   fromSheet.forEach(m => { known[m.qr] = true; });
 
-  const mine = readLocalMachines().filter(m => !known[m.qr]);
+  const mine = readLocalMachines().filter(m => !known[m.qr] && !m.problem);
 
   // A machine the sheet already has, that this phone has just put a tag on.
   //
@@ -1401,7 +1445,26 @@ function register() {
     .filter(c => c.machine && !c.problem && !known[c.machine.qr])
     .map(c => c.machine);
 
-  return fromSheet.concat(mine).concat(claimed);
+  // And the rows in the register that have no tag on them yet.
+  //
+  // They are real machines standing in a real building — the only thing they
+  // are missing is a bit of laminated paper. Keeping them out of this list
+  // was making the app answer "we have no lifts" about a hundred and thirty
+  // two lifts.
+  //
+  // One drops out the moment this phone has a tagged version of the same unit
+  // number, so a machine never appears twice while its tag is on its way to
+  // the sheet.
+  const carrying = {};
+  fromSheet.concat(mine).concat(claimed).forEach(m => {
+    if (m.unit) carrying[String(m.unit).toLowerCase()] = true;
+  });
+
+  const untagged = readUntagged()
+    .filter(m => !carrying[String(m.unit || "").toLowerCase()])
+    .map(m => Object.assign({}, m, { qr: "" }));
+
+  return fromSheet.concat(mine).concat(claimed).concat(untagged);
 }
 
 
@@ -1478,7 +1541,10 @@ function siteSummary() {
   const lifts = register();
   if (!lifts.length) return "";
 
-  const quiet = lifts.filter(m => daysQuiet(m) >= 7).length;
+  // Only the tagged ones. A machine nobody can scan has not gone quiet, it
+  // has never been given a voice — counting those would put the whole yard
+  // in the warning and make the number worth nothing.
+  const quiet = lifts.filter(m => m.qr && daysQuiet(m) >= 7).length;
 
   return `
     <p class="summary">
@@ -1549,7 +1615,24 @@ function show(code) {
     const machines = readLocalMachines().filter(m => !m.sent);
     const asks     = readRequests().filter(r => !r.sent);
     const tags     = readClaims().filter(c => !c.sent);
-    const stuck    = readClaims().filter(c => c.problem);
+
+    // Anything the sheet turned away, whichever queue it came from. Kept
+    // rather than retried: the answer will not change on its own, and the
+    // person holding the phone is the only one who can fix it.
+    const stuck = readClaims()
+      .filter(c => c.problem)
+      .map(c => ({
+        what: "Tag " + c.qr + " on unit #" + c.unit,
+        why:  c.problem,
+        drop: `data-dropclaim="${c.id}"`
+      }))
+      .concat(readLocalMachines()
+        .filter(m => m.problem)
+        .map(m => ({
+          what: "New lift " + m.desc + " on tag " + m.qr,
+          why:  m.problem,
+          drop: `data-forget="${m.qr}"`
+        })));
     const total    = scans.length + machines.length + asks.length + tags.length;
 
     app.innerHTML = `
@@ -1595,10 +1678,10 @@ function show(code) {
 
       ${stuck.length ? `
         <div class="card missing">
-          <h1>${stuck.length === 1 ? "A tag that wouldn't stick" : "Tags that wouldn't stick"}</h1>
-          ${stuck.map(c => `
-            <p class="sub">Tag ${c.qr} on unit #${c.unit}<br>${c.problem}
-            <br><a href="#" data-dropclaim="${c.id}">Clear this</a></p>`).join("")}
+          <h1>${stuck.length === 1 ? "One that wouldn't stick" : "Ones that wouldn't stick"}</h1>
+          ${stuck.map(item => `
+            <p class="sub">${item.what}<br>${item.why}
+            <br><a href="#" ${item.drop}>Clear this</a></p>`).join("")}
         </div>` : ""}`;
 
   } else if (code === SUPPORT) {
@@ -1876,6 +1959,7 @@ function show(code) {
           <h1>${machine.desc}</h1>
           <div class="statusline">
             <span class="pill ${statusOf(machine)}">${STATUS_LABEL[statusOf(machine)]}</span>
+            ${machine.qr ? "" : `<span class="pill calledoff">No tag yet</span>`}
             ${hasPO(machine) ? `<span class="po">PO ${machine.po}</span>` : ""}
           </div>
         </div>
@@ -1906,7 +1990,13 @@ function show(code) {
           </div>
         </dl>
       </div>
-      ${useBlock(machine)}
+      ${machine.qr ? useBlock(machine) : `
+        <div class="card missing">
+          <h1>Nothing to scan yet</h1>
+          <p>This lift is in the register but has no QR tag on it. Put a blank
+          tag on the machine, scan it, and fill in the survey — the unit number
+          is what joins the two together.</p>
+        </div>`}
       <button class="btn secondary" data-scan>Scan another tag</button>
       ${onlyOnThisPhone(machine.qr) ? `
         <p class="note">
@@ -2323,10 +2413,10 @@ function drawLifts() {
       Machines tab of the sheet, or tag one with ADD EQUIPMENT.</p>`}
     <div class="list">
       ${found.map(m => `
-        <a href="?id=${m.qr}" data-go="${m.qr}">
+        <a href="?id=${keyOf(m)}" data-go="${keyOf(m)}">
           <span>
             <span class="lbl">${m.desc}</span><br>
-            <span class="sub">Vendor: ${m.vendor}<br>Unit #${m.unit}<br>Job #: ${m.job}${onlyOnThisPhone(m.qr) ? "<br>On this phone only" : ""}</span>
+            <span class="sub">Vendor: ${m.vendor}<br>Unit #${m.unit}<br>Job #: ${m.job}${m.qr ? "" : "<br>No tag on it yet"}${onlyOnThisPhone(m.qr) ? "<br>On this phone only" : ""}</span>
           </span>
         </a>
       `).join("")}
