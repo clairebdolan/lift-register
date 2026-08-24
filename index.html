@@ -14,6 +14,18 @@
 <meta name="apple-mobile-web-app-title" content="Lift Register">
 <meta name="theme-color" content="#13406A">
 
+<!-- Shake hands early.
+     A phone opening this app has never spoken to either of these hosts, and
+     before one byte can arrive it has to look up the name, open a connection
+     and negotiate encryption. On a phone that is a third of a second each,
+     and it is spent AFTER somebody has already scanned a tag and is waiting.
+     Doing it here, while the app is still starting, means the wire is already
+     open by the time anything is asked for.
+       lh3  — Drive's image host, where the intake photos come from
+       script.google.com — the sheet the register is read from, every open -->
+<link rel="preconnect" href="https://lh3.googleusercontent.com" crossorigin>
+<link rel="preconnect" href="https://script.google.com">
+
 <style>
   /* Libre Franklin, an open revival of Franklin Gothic — the family the
      Loenbro wordmark is cut from. The file lives in this folder rather than
@@ -677,7 +689,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 52";
+const APP_VERSION = "build 53";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -1757,28 +1769,48 @@ function show(code) {
 function photoBlock(machine) {
   if (!machine.photo) return "";
 
-  // w1000 is about right for a band this size on a phone that packs three
-  // device pixels into every one it admits to.
-  const src = "https://drive.google.com/thumbnail?id=" +
-              encodeURIComponent(machine.photo) + "&sz=w1000";
+  const id = encodeURIComponent(machine.photo);
 
+  // Straight to lh3, which is the shelf Drive actually keeps the picture on.
+  // The tidier drive.google.com/thumbnail address only bounces you here — and
+  // that bounce costs a phone a second name lookup and a second handshake
+  // with a host it has never met, before any of the photo arrives.
+  //
+  // w600 rather than w1000. The band is 200 tall and the picture is fitted
+  // inside it, so a portrait photo is only ever drawn about 150 across — 600
+  // is already generous on the densest screen, and it halves what has to come
+  // down a phone standing in a hall with two bars.
   return `
     <figure class="photo" id="photo">
-      <img src="${src}" onerror="photoFailed(this)"
+      <img src="https://lh3.googleusercontent.com/d/${id}=w600"
+           data-id="${id}"
+           fetchpriority="high" decoding="async"
+           onerror="photoFailed(this)"
            alt="This machine, photographed when it arrived on site">
     </figure>`;
 }
 
 
-// The picture did not arrive. Almost always no signal; occasionally a file
-// whose sharing never took when it was filed. From here those look identical,
-// so ask the phone which it is rather than guessing wrong at somebody.
+// The picture did not arrive.
 //
-// Either way it ends as a line of grey text. A missing photo is not an error,
+// First failure gets one more try, at the front door. lh3 answers fastest but
+// it is not the address Google documents anywhere; drive.google.com/thumbnail
+// is. If the short way ever stops working, the long way still does, and
+// nobody has to wait for us to notice. There is no point retrying with no
+// signal, so that case goes straight to the message.
+//
+// Everything ends as a line of grey text. A missing photo is not an error,
 // and nothing else on the screen knows or cares that this happened.
 function photoFailed(image) {
   const frame = image.parentNode;
   if (!frame) return;
+
+  if (!image.dataset.retried && navigator.onLine) {
+    image.dataset.retried = "1";
+    image.src = "https://drive.google.com/thumbnail?id=" +
+                image.dataset.id + "&sz=w600";
+    return;
+  }
 
   frame.innerHTML = navigator.onLine
     ? `<div class="photo-wait">Photo didn't load</div>`
