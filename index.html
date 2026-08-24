@@ -217,6 +217,35 @@
     font-weight: 400;
   }
 
+  /* The picture taken when the machine arrived on site.
+     The height is fixed, so the space is held from the moment the screen
+     draws and nothing jumps when the photo lands a second later. "contain"
+     rather than "cover" because this is condition evidence — a crop that
+     hides the damaged corner defeats the point of having it. */
+  .photo {
+    margin: 0;
+    height: 200px;
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* Stands in for the picture while it is coming, and stays there if it
+     never does. Grey and quiet: a missing photo is not an error. */
+  .photo-wait {
+    font-size: 14px;
+    color: var(--ink-3);
+  }
+
   .note {
     margin-top: 22px;
     font-size: 14px;
@@ -1683,6 +1712,7 @@ function show(code) {
             <span class="v">${lastScanText(machine)}</span>
           </div>
         </dl>
+        ${photoBlock(machine)}
       </div>
       ${useBlock(machine)}
       <button class="btn secondary" data-scan>Scan another tag</button>
@@ -1691,7 +1721,72 @@ function show(code) {
           This lift is on this phone only — it hasn't reached the sheet yet.
           <br><a href="#" data-forget="${machine.qr}">Remove it from this phone</a>
         </p>` : ""}`;
+
+    // The screen is up and readable. Only now go looking for the picture.
+    // The facts about the lift are what somebody standing in front of it
+    // needs; the photo is worth waiting for but never worth waiting on.
+    if (machine.photo) loadPhoto(machine.photo);
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// THE PHOTO
+//
+// Taken at intake, filed in Drive by the Apps Script, and handed back here by
+// that same script rather than by Drive itself. That detour is the whole
+// point: the script runs as the account that owns the pictures and is
+// published so that anyone may call it, so a phone gets the photo without a
+// Google login, a sharing setting, or a "request access" screen.
+//
+// A web app cannot return raw image bytes, so it arrives as base64 text
+// inside JSON and becomes a picture again on this side.
+// ---------------------------------------------------------------------------
+
+// Reserve the space. No src yet — nothing is fetched until loadPhoto runs.
+function photoBlock(machine) {
+  if (!machine.photo) return "";
+
+  return `
+    <figure class="photo" id="photo">
+      <div class="photo-wait">Loading photo…</div>
+    </figure>`;
+}
+
+
+// Every way this can fail ends the same way: a line of grey text where the
+// picture would have been. Nothing is thrown, so a hall with no signal looks
+// exactly like a lift that never had a photo — and the rest of the screen,
+// the scan form, and the queue behind it carry on untouched.
+async function loadPhoto(id) {
+  const frame = document.getElementById("photo");
+  if (!frame) return;
+
+  try {
+    const response = await fetch(ENDPOINT + "?photo=" + encodeURIComponent(id));
+    const result   = await response.json();
+    if (!result.ok || !result.data) throw new Error("no photo came back");
+
+    // Let the picture finish decoding before it goes on the screen, so it
+    // appears whole rather than painting in from the top.
+    const image = new Image();
+    image.alt = "This machine, photographed when it arrived on site";
+
+    image.onload = () => {
+      frame.innerHTML = "";
+      frame.appendChild(image);
+    };
+    image.onerror = () => photoFailed(frame);
+    image.src = result.data;
+
+  } catch (err) {
+    photoFailed(frame);
+  }
+}
+
+
+function photoFailed(frame) {
+  frame.innerHTML = `<div class="photo-wait">Photo needs signal</div>`;
 }
 
 
