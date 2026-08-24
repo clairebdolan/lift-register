@@ -222,10 +222,13 @@
      draws and nothing jumps when the photo lands a second later. "contain"
      rather than "cover" because this is condition evidence — a crop that
      hides the damaged corner defeats the point of having it. */
+  /* Sits between the title band and the facts. The band above already draws
+     a line under itself, so this one only needs a line below — a border on
+     both sides would read as two rules with a gap. */
   .photo {
     margin: 0;
     height: 200px;
-    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
     background: var(--bg);
     display: flex;
     align-items: center;
@@ -674,7 +677,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 51";
+const APP_VERSION = "build 52";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -1694,6 +1697,7 @@ function show(code) {
           <h1>${machine.desc}</h1>
           <span class="pill ${machine.status}">${STATUS_LABEL[machine.status]}</span>
         </div>
+        ${photoBlock(machine)}
         <dl>
           <div class="row">
             <span class="k">Vendor:</span>
@@ -1719,7 +1723,6 @@ function show(code) {
             <span class="v">${lastScanText(machine)}</span>
           </div>
         </dl>
-        ${photoBlock(machine)}
       </div>
       ${useBlock(machine)}
       <button class="btn secondary" data-scan>Scan another tag</button>
