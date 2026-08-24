@@ -661,6 +661,17 @@ const STATUS_LABEL = {
   pickedup:  "Picked up"
 };
 
+// Anything in the sheet's Status column that isn't one of those three is
+// treated as on rent.
+//
+// A hundred and fifty rows get typed by hand, and one of them will say
+// "Active" or "on rent" or "actve". None of those should hide a machine from
+// the field, and none of them should put the word "undefined" on a screen in
+// front of somebody stood at a lift.
+function statusOf(machine) {
+  return STATUS_LABEL[machine.status] ? machine.status : "active";
+}
+
 
 // ---------------------------------------------------------------------------
 // 2. WHICH MACHINE WAS SCANNED?
@@ -709,7 +720,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 54";
+const APP_VERSION = "build 55";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -1248,6 +1259,7 @@ function idFromAddress() {
   if (params.get("recent")) return RECENT;
   if (params.get("request")) return REQUEST;
   if (params.get("known")) return ALREADY;
+  if (params.get("claim")) return CLAIM;
   if (params.get("new")) return INTAKE;
   if (params.get("all")) return ALL_LIFTS;
   return params.get("id");
@@ -1272,6 +1284,8 @@ function findMachine(code) {
 const LOCAL_MACHINES = "liftregister.machines";   // added on this phone
 const SHEET_MACHINES = "liftregister.register";   // last copy of the sheet
 const REGISTER_AT    = "liftregister.registerat"; // when that copy arrived
+const UNTAGGED_STORE = "liftregister.untagged";   // register rows with no tag
+const CLAIM_STORE    = "liftregister.claims";     // tags put on, not sent yet
 
 function readLocalMachines() {
   try {
@@ -1287,6 +1301,32 @@ function readSheetMachines() {
   } catch (err) {
     return [];
   }
+}
+
+
+// The machines in the register that have no tag on them yet. They cannot be
+// opened — there is no code to open them by — so they are kept apart from the
+// register proper, and only the tagging screen ever looks at them.
+function readUntagged() {
+  try {
+    return JSON.parse(localStorage.getItem(UNTAGGED_STORE)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+
+// Tags this phone has put on machines, waiting to reach the sheet.
+function readClaims() {
+  try {
+    return JSON.parse(localStorage.getItem(CLAIM_STORE)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function writeClaims(list) {
+  localStorage.setItem(CLAIM_STORE, JSON.stringify(list));
 }
 
 // What the app believes exists.
@@ -1348,7 +1388,20 @@ function register() {
 
   const mine = readLocalMachines().filter(m => !known[m.qr]);
 
-  return fromSheet.concat(mine);
+  // A machine the sheet already has, that this phone has just put a tag on.
+  //
+  // It is emphatically not a new machine and must never be sent as one — the
+  // sheet would end up with the same lift on two rows. It is carried here so
+  // that scanning the tag you have just stuck on works immediately, in a hall,
+  // with no signal, which is the only place anybody will ever do this.
+  //
+  // One the sheet refused stays out. The code is not really on that machine,
+  // and pretending otherwise is a lie the phone would be telling itself.
+  const claimed = readClaims()
+    .filter(c => c.machine && !c.problem && !known[c.machine.qr])
+    .map(c => c.machine);
+
+  return fromSheet.concat(mine).concat(claimed);
 }
 
 
@@ -1378,10 +1431,40 @@ async function fetchRegister() {
     });
 
     localStorage.setItem(LOCAL_MACHINES, JSON.stringify(stillMine));
+
+    // A tag this phone put on is finished with the moment the sheet comes
+    // back carrying it. One the sheet refused is kept, because nobody has
+    // been told about it yet.
+    const openClaims = readClaims().filter(claim => {
+      const landed = result.machines.some(m => m.qr === claim.qr);
+      return !landed || claim.problem;
+    });
+    writeClaims(openClaims);
+
     updatePending();
 
   } catch (err) {
     // No signal, or the sheet is unreachable. Keep what we have.
+  }
+}
+
+
+// The rows with no tag yet. Asked for separately from the register, and kept
+// on the phone for the same reason: the hall where somebody is stood holding
+// a blank tag is the one place with no signal.
+async function fetchUntagged() {
+  if (!navigator.onLine) return;
+
+  try {
+    const response = await fetch(ENDPOINT + "?list=untagged", { method: "GET" });
+    const result   = await response.json();
+
+    if (!result.ok || !Array.isArray(result.untagged)) return;
+
+    localStorage.setItem(UNTAGGED_STORE, JSON.stringify(result.untagged));
+
+  } catch (err) {
+    // Keep the copy we have.
   }
 }
 
@@ -1465,7 +1548,9 @@ function show(code) {
     const scans    = readScans().filter(s => !s.sent);
     const machines = readLocalMachines().filter(m => !m.sent);
     const asks     = readRequests().filter(r => !r.sent);
-    const total    = scans.length + machines.length + asks.length;
+    const tags     = readClaims().filter(c => !c.sent);
+    const stuck    = readClaims().filter(c => c.problem);
+    const total    = scans.length + machines.length + asks.length + tags.length;
 
     app.innerHTML = `
       ${total ? `
@@ -1491,6 +1576,12 @@ function show(code) {
               </div>`;
           }).join("")}
 
+          ${tags.map(c => `
+            <div class="entry">
+              New tag &middot; ${c.qr}<br>
+              <span class="meta">Unit #${c.unit} &middot; ${whenText(c.at)}</span>
+            </div>`).join("")}
+
           ${asks.map(r => `
             <div class="entry">
               Equipment request &middot; ${r.equipment}<br>
@@ -1500,7 +1591,15 @@ function show(code) {
         </div>
 
         <button class="btn navy" data-sendnow>Send now</button>`
-      : `<p class="lede">No pending uploads.</p>`}`;
+      : `<p class="lede">No pending uploads.</p>`}
+
+      ${stuck.length ? `
+        <div class="card missing">
+          <h1>${stuck.length === 1 ? "A tag that wouldn't stick" : "Tags that wouldn't stick"}</h1>
+          ${stuck.map(c => `
+            <p class="sub">Tag ${c.qr} on unit #${c.unit}<br>${c.problem}
+            <br><a href="#" data-dropclaim="${c.id}">Clear this</a></p>`).join("")}
+        </div>` : ""}`;
 
   } else if (code === SUPPORT) {
     const lastName = localStorage.getItem(LAST_NAME) || "";
@@ -1582,6 +1681,27 @@ function show(code) {
           <p class="warn-text" id="reqWarn"></p>
           <button class="btn" data-sendrequest>Send request</button>
         </div>`}`;
+
+  } else if (code === CLAIM) {
+    // A blank tag in one hand and a lift in front of you that the register
+    // already knows about. This screen does one thing: join the two.
+    app.innerHTML = `
+      <div class="card">
+        <div class="card-top">
+          <h1>Tag ${claimCode}</h1>
+          <div class="statusline">
+            <span class="pill calledoff">Not on a machine yet</span>
+          </div>
+        </div>
+        <p class="note">Find the lift you have just put this tag on. Type the
+        unit number off the vendor's sticker, or the serial number.</p>
+      </div>
+
+      <input class="find" id="claimfind" type="search" autocomplete="off"
+             placeholder="Search by unit or serial number" autocapitalize="characters">
+      <div id="claimlist"></div>`;
+
+    drawClaimList();
 
   } else if (code === ALREADY) {
     // Somebody tried to register a machine that is already in the register.
@@ -1728,9 +1848,24 @@ function show(code) {
     app.innerHTML = `
       <div class="card missing">
         <h1>Machine not found</h1>
-        <p>Tag <strong>${code}</strong> isn't in the register.
-        It may not have been checked in yet.</p>
+        <p>Tag <strong>${code}</strong> isn't on any machine yet.</p>
       </div>
+
+      <button class="btn navy" data-claim="${code}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 12h7"/><path d="M15 12h5"/><path d="M11 8l4 4-4 4"/>
+        </svg>
+        PUT IT ON A LIFT WE ALREADY HAVE
+      </button>
+
+      <button class="btn navy" data-newlift="${code}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="4" y="4" width="16" height="16" rx="3"/>
+          <path d="M12 9v6"/><path d="M9 12h6"/>
+        </svg>
+        ADD EQUIPMENT NEW TO SITE
+      </button>
+
       <button class="btn secondary" data-scan>Scan another tag</button>`;
 
   } else {
@@ -1740,7 +1875,7 @@ function show(code) {
         <div class="card-top">
           <h1>${machine.desc}</h1>
           <div class="statusline">
-            <span class="pill ${machine.status}">${STATUS_LABEL[machine.status]}</span>
+            <span class="pill ${statusOf(machine)}">${STATUS_LABEL[statusOf(machine)]}</span>
             ${hasPO(machine) ? `<span class="po">PO ${machine.po}</span>` : ""}
           </div>
         </div>
@@ -1981,6 +2116,7 @@ function scanListBlock() {
 const ALL_LIFTS = "__all__";
 const INTAKE    = "__intake__";
 const ALREADY   = "__already__";
+const CLAIM     = "__claim__";
 const REQUEST   = "__request__";
 const MENU      = "__menu__";
 const PENDING   = "__pending__";
@@ -1992,6 +2128,9 @@ let intakeCode = "";
 
 // A tag someone tried to register that is already in the register.
 let clashCode = "";
+
+// A blank tag being put on a lift the register already knows about.
+let claimCode = "";
 
 // The equipment request just sent, so the screen can confirm it.
 let requestSent = null;
@@ -2028,6 +2167,7 @@ function go(code) {
                 : code === RECENT   ? "?recent=1"
                 : code === REQUEST  ? "?request=1"
                 : code === ALREADY  ? "?known=1"
+                : code === CLAIM    ? "?claim=1"
                 : code === INTAKE   ? "?new=1"
                 : code === ALL_LIFTS ? "?all=1"
                 : code               ? "?id=" + code
@@ -2049,6 +2189,103 @@ function goBack() {
     history.replaceState({}, "", "./");
     show(null);
   }
+}
+
+
+// The rows on the tagging screen. Only ever machines with no tag on them, so
+// a lift cannot be given a second code by accident.
+function drawClaimList() {
+  const box = document.getElementById("claimlist");
+  if (!box) return;
+
+  const needle  = (document.getElementById("claimfind").value || "").trim().toLowerCase();
+  const waiting = readUntagged();
+
+  if (!waiting.length) {
+    box.innerHTML = `
+      <p class="lede">This phone hasn't got the list of untagged machines yet.
+      It comes down with the register the next time there's signal.</p>`;
+    return;
+  }
+
+  // Nothing typed shows nothing, same as the all-lifts screen. You are stood
+  // at a machine with its number in front of you — a list of everything is
+  // not an answer to that, it is a way to pick the wrong one.
+  if (!needle) {
+    box.innerHTML = `
+      <p class="lede">${waiting.length} ${waiting.length === 1 ? "machine has" : "machines have"}
+      no tag yet. Type a unit or serial number to find yours.</p>`;
+    return;
+  }
+
+  const found = waiting.filter(m =>
+    (m.unit || "").toLowerCase().includes(needle) ||
+    (m.serial || "").toLowerCase().includes(needle) ||
+    (m.desc || "").toLowerCase().includes(needle));
+
+  box.innerHTML = found.length ? `
+    <div class="list">
+      ${found.map(m => `
+        <a href="#" data-pick="${m.unit}||${m.serial}">
+          <span>
+            <span class="lbl">${m.desc}</span><br>
+            <span class="sub">Vendor: ${m.vendor}<br>Unit #${m.unit}<br>Serial #${m.serial}</span>
+          </span>
+        </a>
+      `).join("")}
+    </div>`
+  : `<p class="lede">Nothing matches. If this lift has never been in the
+     register at all, go back and use ADD EQUIPMENT instead.</p>`;
+}
+
+
+// Join the tag to the machine.
+//
+// Written to the phone first and sent second, exactly like a scan. The tag is
+// on the machine the moment somebody presses OK — whether the sheet has heard
+// about it is a separate problem that solves itself on the walk out.
+// The row is picked out by unit and serial together, not by one of them.
+// Plenty of machines arrive with a unit number and no serial yet, and
+// "the one with no serial" matches the first of however many there are.
+function attachTag(key) {
+  const unit   = (key || "").split("||")[0];
+  const serial = (key || "").split("||")[1];
+
+  const lift = readUntagged().find(m => m.unit === unit && m.serial === serial);
+  if (!lift) return;
+
+  const sure = confirm(
+    "Put tag " + claimCode + " on unit #" + lift.unit + "?\n\n" + lift.desc);
+  if (!sure) return;
+
+  const claim = {
+    id:     newId(),
+    qr:     claimCode,
+    serial: lift.serial,
+    unit:   lift.unit,
+    by:     localStorage.getItem(LAST_NAME) || "",
+    at:     new Date().toISOString(),
+
+    // The machine as this phone will show it until the sheet catches up.
+    machine: Object.assign({}, lift, { qr: claimCode })
+  };
+
+  const claims = readClaims();
+  claims.push(claim);
+  writeClaims(claims);
+
+  // Out of the untagged list, so the next person searching on this phone
+  // cannot put a second tag on the same lift.
+  localStorage.setItem(UNTAGGED_STORE,
+    JSON.stringify(readUntagged().filter(m =>
+      !(m.unit === unit && m.serial === serial))));
+
+  updatePending();
+  sendAll();
+
+  // Straight to the machine's own screen — which now exists on this phone,
+  // under its new code.
+  go(claimCode);
 }
 
 
@@ -2376,6 +2613,43 @@ document.addEventListener("click", event => {
     go(ALL_LIFTS);
   }
 
+  // Intake, from the screen that has just told you the tag is on nothing.
+  // The code came off the tag a moment ago; scanning it a second time to get
+  // to the same place is the app not paying attention.
+  const fresh = event.target.closest("[data-newlift]");
+  if (fresh) {
+    event.preventDefault();
+    intakeCode = (fresh.getAttribute("data-newlift") || "").toUpperCase();
+    go(INTAKE);
+  }
+
+  // A blank tag, going onto a lift the register already has.
+  const claim = event.target.closest("[data-claim]");
+  if (claim) {
+    event.preventDefault();
+    claimCode = (claim.getAttribute("data-claim") || "").toUpperCase();
+    go(CLAIM);
+  }
+
+  // Which lift it is going on.
+  const pick = event.target.closest("[data-pick]");
+  if (pick) {
+    event.preventDefault();
+    attachTag(pick.getAttribute("data-pick"));
+  }
+
+  // A tag the sheet would not accept. Clearing it only forgets the attempt —
+  // the tag is still on the machine, so it will need doing again once the
+  // reason has been sorted out in the sheet.
+  const drop = event.target.closest("[data-dropclaim]");
+  if (drop) {
+    event.preventDefault();
+    const gone = drop.getAttribute("data-dropclaim");
+    writeClaims(readClaims().filter(c => c.id !== gone));
+    updatePending();
+    show(PENDING);
+  }
+
   if (event.target.closest("[data-sendrequest]")) {
     event.preventDefault();
     sendRequest();
@@ -2408,6 +2682,7 @@ document.addEventListener("click", event => {
 // Typing in the search box on the all-lifts screen.
 document.addEventListener("input", event => {
   if (event.target.id === "find") drawLifts();
+  if (event.target.id === "claimfind") drawClaimList();
 });
 
 document.addEventListener("change", event => {
@@ -2466,10 +2741,55 @@ function postToSheet(payload) {
 }
 
 
+// Tags put on machines the register already had.
+//
+// Unlike a scan, this can be refused — the code might already be on another
+// lift, or somebody else might have tagged the machine while this phone was
+// out of signal. A refusal is kept and shown rather than retried forever,
+// because no amount of sending it again will change the answer.
+async function pushClaims() {
+  if (!navigator.onLine) return;
+
+  const waiting = readClaims().filter(c => !c.sent);
+  if (!waiting.length) return;
+
+  // The machine travels with the claim on this phone only. The sheet has the
+  // row already; all it needs is which lift and which code.
+  const parcel = waiting.map(c => ({
+    id: c.id, qr: c.qr, serial: c.serial, unit: c.unit, by: c.by, at: c.at
+  }));
+
+  try {
+    const result = await postToSheet({ claims: parcel });
+    if (!result.ok) return;
+
+    const landed = {};
+    (result.saved || []).forEach(id => { landed[id] = true; });
+
+    const why = {};
+    (result.refused || []).forEach(r => { why[r.id] = r.why; });
+
+    const list = readClaims();
+    list.forEach(c => {
+      if (landed[c.id]) c.sent = true;
+      if (why[c.id]) { c.sent = true; c.problem = why[c.id]; }
+    });
+    writeClaims(list);
+
+  } catch (err) {
+    // No signal. It stays on the phone and goes with the next attempt.
+
+  } finally {
+    updatePending();
+  }
+}
+
+
 // Everything the phone is holding, in one go.
 async function sendAll() {
   await sync();
   await sendLifts();
+  await pushClaims();
   await pushRequests();
   await pushSupport();
 }
@@ -2513,6 +2833,7 @@ async function sync() {
 function pendingCount() {
   return readScans().filter(scan => !scan.sent).length +
          readLocalMachines().filter(lift => !lift.sent).length +
+         readClaims().filter(claim => !claim.sent).length +
          readRequests().filter(ask => !ask.sent).length +
          readSupport().filter(note => !note.sent).length;
 }
@@ -2540,6 +2861,7 @@ function whenText(iso) {
 updatePending();
 sync();
 fetchRegister().then(() => { if (idFromAddress() === ALL_LIFTS) show(ALL_LIFTS); });
+fetchUntagged();
 
 // Try again whenever the app comes back to the front, or the phone finds
 // signal. Between them, walking out of a hall is enough.
@@ -2547,10 +2869,11 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
   sync();
   fetchRegister();
+  fetchUntagged();
   pushRequests();
 });
 
-window.addEventListener("online", () => { sync(); fetchRegister(); pushRequests(); });
+window.addEventListener("online", () => { sync(); fetchRegister(); fetchUntagged(); pushRequests(); });
 </script>
 </body>
 </html>
