@@ -246,6 +246,21 @@
     color: var(--ink-3);
   }
 
+  /* Google's script service takes two to three seconds to answer anything at
+     all, even a single line of text. A label sitting perfectly still for that
+     long reads as broken, so this one breathes while it waits. It stops the
+     moment the picture arrives, or gives up. */
+  .photo-wait.working {
+    animation: breathe 1.4s ease-in-out infinite;
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .photo-wait.working { animation: none; }
+  }
+
   .note {
     margin-top: 22px;
     font-size: 14px;
@@ -673,7 +688,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 49";
+const APP_VERSION = "build 50";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -950,7 +965,13 @@ async function addLift() {
 
 
 // Draw the picture onto a canvas at a smaller size and read it back out as a
-// JPEG. 1600 across is plenty to read a plate off.
+// JPEG.
+//
+// This was 1600 across, chosen so a serial plate would still be readable.
+// There is no plate photo any more — this one is the whole machine, kept as
+// evidence of what it looked like on arrival, and 1000 shows that perfectly
+// well. It roughly halves what has to come back down a phone standing in a
+// hall with two bars, which is the only place any of this is ever felt.
 function shrinkPhoto(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -959,7 +980,7 @@ function shrinkPhoto(file) {
       const image = new Image();
 
       image.onload = () => {
-        const max   = 1600;
+        const max   = 1000;
         const scale = Math.min(1, max / Math.max(image.width, image.height));
         const canvas = document.createElement("canvas");
         canvas.width  = Math.round(image.width * scale);
@@ -1743,13 +1764,28 @@ function show(code) {
 // inside JSON and becomes a picture again on this side.
 // ---------------------------------------------------------------------------
 
+// Photos are kept in a box of their own, and the name has no version in it.
+//
+// sw.js throws away every cache that is not the current app version. That is
+// exactly right for app files and would be ruinous here: every stored picture
+// would vanish the next time we shipped a change, which would make keeping
+// them pointless. The worker is told to leave this one alone.
+const PHOTO_CACHE = "lift-register-photos";
+
+// About 40MB at the size these come out — sized so nearly the whole fleet
+// fits, while the box still cannot run away. Nothing evicts for us: the cache
+// has no expiry and no size limit of its own, so an unpruned box is a bucket
+// with no overflow.
+const PHOTO_KEEP = 100;
+
+
 // Reserve the space. No src yet — nothing is fetched until loadPhoto runs.
 function photoBlock(machine) {
   if (!machine.photo) return "";
 
   return `
     <figure class="photo" id="photo">
-      <div class="photo-wait">Loading photo…</div>
+      <div class="photo-wait working">Loading photo…</div>
     </figure>`;
 }
 
@@ -1762,13 +1798,32 @@ async function loadPhoto(id) {
   const frame = document.getElementById("photo");
   if (!frame) return;
 
+  const url = ENDPOINT + "?photo=" + encodeURIComponent(id);
+
   try {
-    const response = await fetch(ENDPOINT + "?photo=" + encodeURIComponent(id));
-    const result   = await response.json();
+    // The phone first. A picture already here costs no network at all, which
+    // is the entire point — the second look at a machine is instant, and it
+    // works in a hall with no signal.
+    let result = await photoFromPhone(url);
+
+    if (!result) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("the script would not answer");
+
+      // Keep the clone, read the original.
+      //
+      // A response body can only be read ONCE. Hand the same one to both the
+      // cache and the parser and whichever goes second gets nothing — which
+      // stores perfectly happily, reports no error, and shows an empty
+      // picture from then on. This one line is the whole difference.
+      await keepPhotoOnPhone(url, response.clone());
+      result = await response.json();
+    }
+
     if (!result.ok || !result.data) throw new Error("no photo came back");
 
-    // Let the picture finish decoding before it goes on the screen, so it
-    // appears whole rather than painting in from the top.
+    // Let it finish decoding before it goes up, so it appears whole rather
+    // than painting in from the top.
     const image = new Image();
     image.alt = "This machine, photographed when it arrived on site";
 
@@ -1781,6 +1836,47 @@ async function loadPhoto(id) {
 
   } catch (err) {
     photoFailed(frame);
+  }
+}
+
+
+// What the phone already has, or nothing at all. Never throws: a browser that
+// will not open its own cache should still be able to go and fetch.
+async function photoFromPhone(url) {
+  try {
+    if (!("caches" in window)) return null;
+
+    const cache  = await caches.open(PHOTO_CACHE);
+    const stored = await cache.match(url);
+
+    return stored ? await stored.json() : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+
+// Put it away, then trim back to the cap.
+async function keepPhotoOnPhone(url, response) {
+  try {
+    if (!("caches" in window)) return;
+
+    const cache = await caches.open(PHOTO_CACHE);
+    await cache.put(url, response);
+
+    // keys() gives them back in the order they went in, so the ones to drop
+    // are at the front. Straight after a put is the only moment the box can
+    // have grown, so it is the only moment worth checking.
+    const keys = await cache.keys();
+    if (keys.length > PHOTO_KEEP) {
+      for (const old of keys.slice(0, keys.length - PHOTO_KEEP)) {
+        await cache.delete(old);
+      }
+    }
+  } catch (err) {
+    // Out of room, or a phone that refuses to store. The picture is already
+    // on the screen either way — failing to keep it is a small loss, and
+    // never worth turning into an error somebody has to look at.
   }
 }
 

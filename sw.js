@@ -15,7 +15,7 @@
 // The name of the storage container on the phone. Change the version number
 // whenever the file list below changes — the phone treats a new name as a
 // brand new container and throws the old one out.
-const CACHE = "lift-register-v12";
+const CACHE = "lift-register-v13";
 
 // The files the app needs in order to start at all.
 const SHELL = [
@@ -55,11 +55,22 @@ self.addEventListener("install", event => {
 //    Deletes the older containers so old files cannot be served by mistake.
 // ---------------------------------------------------------------------------
 
+// Boxes that are not ours to sweep.
+//
+// The photos live in one of these, and its name deliberately carries no
+// version number. App files are replaced with every release; photographs of
+// machines are not. Without this line, shipping any change at all would empty
+// somebody's stored pictures and they would have to be pulled down the phone
+// again — which is the exact cost keeping them was meant to avoid.
+const LEAVE_ALONE = ["lift-register-photos"];
+
 self.addEventListener("activate", event => {
   event.waitUntil(
     caches.keys().then(names =>
       Promise.all(
-        names.filter(name => name !== CACHE).map(name => caches.delete(name))
+        names
+          .filter(name => name !== CACHE && LEAVE_ALONE.indexOf(name) === -1)
+          .map(name => caches.delete(name))
       )
     )
   );
@@ -101,7 +112,13 @@ self.addEventListener("fetch", event => {
     return;
   }
 
-  // Everything else — later this will be the scanner file and the photos.
+  // Everything else the app asks for from our own folder — the scanner, the
+  // icon, the font.
+  //
+  // Not the photos. Those come from Google's script service, so they are
+  // caught by the line above and never reach here at all; index.html keeps
+  // them itself, in a box of its own. Worth knowing before going looking for
+  // them in this file.
   event.respondWith(serveFile(request));
 });
 
