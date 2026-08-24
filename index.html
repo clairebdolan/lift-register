@@ -191,6 +191,25 @@
   .pill.calledoff  { background: var(--warn-bg); color: var(--warn); }
   .pill.pickedup   { background: var(--off-bg);  color: var(--off);  }
 
+  /* The status, with the PO alongside it. Wraps onto its own line rather than
+     squeezing the pill if a long number and a narrow phone ever meet. */
+  .statusline {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  /* Deliberately quiet. Nobody standing at a lift needs the PO — it is what
+     makes this machine reconcile against a vendor's invoice weeks later, so
+     it belongs on the screen without competing with anything on it. */
+  .po {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--ink-3);
+  }
+
   dl { margin: 0; }
 
   /* One line per fact, reading "Label: value" left to right.
@@ -201,6 +220,7 @@
     border-left: 4px solid transparent;
   }
   .row:last-child { border-bottom: none; }
+  .row.job    { border-left-color: var(--ink); }
   .row.unit   { border-left-color: var(--navy); }
   .row.serial { border-left-color: var(--serial); }
 
@@ -689,7 +709,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 53";
+const APP_VERSION = "build 54";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -1298,6 +1318,18 @@ function lastScanText(machine) {
 }
 
 
+// Is there a PO worth putting on the screen?
+//
+// The column is empty on a machine that turned up before anybody raised one,
+// and at least one row in the register carries a literal "0" — somebody's way
+// of writing "none", not a purchase order. "PO 0" on a screen is worse than
+// no PO at all, so both count as nothing here.
+function hasPO(machine) {
+  const po = String(machine.po || "").trim();
+  return po !== "" && po !== "0";
+}
+
+
 // A lift this phone is carrying that the sheet has never confirmed. Usually
 // it means no signal yet. Occasionally it means something went wrong on the
 // way, and then somebody needs to be able to throw it away.
@@ -1707,7 +1739,10 @@ function show(code) {
       <div class="card">
         <div class="card-top">
           <h1>${machine.desc}</h1>
-          <span class="pill ${machine.status}">${STATUS_LABEL[machine.status]}</span>
+          <div class="statusline">
+            <span class="pill ${machine.status}">${STATUS_LABEL[machine.status]}</span>
+            ${hasPO(machine) ? `<span class="po">PO ${machine.po}</span>` : ""}
+          </div>
         </div>
         ${photoBlock(machine)}
         <dl>
@@ -1715,7 +1750,7 @@ function show(code) {
             <span class="k">Vendor:</span>
             <span class="v">${machine.vendor}</span>
           </div>
-          <div class="row">
+          <div class="row job">
             <span class="k">Job #:</span>
             <span class="v">${machine.job}</span>
             <span class="hint">The job this lift is rented to</span>
