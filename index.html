@@ -246,20 +246,6 @@
     color: var(--ink-3);
   }
 
-  /* Google's script service takes two to three seconds to answer anything at
-     all, even a single line of text. A label sitting perfectly still for that
-     long reads as broken, so this one breathes while it waits. It stops the
-     moment the picture arrives, or gives up. */
-  .photo-wait.working {
-    animation: breathe 1.4s ease-in-out infinite;
-  }
-  @keyframes breathe {
-    0%, 100% { opacity: 1; }
-    50%      { opacity: 0.4; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .photo-wait.working { animation: none; }
-  }
 
   .note {
     margin-top: 22px;
@@ -688,7 +674,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 50";
+const APP_VERSION = "build 51";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -1742,11 +1728,6 @@ function show(code) {
           This lift is on this phone only — it hasn't reached the sheet yet.
           <br><a href="#" data-forget="${machine.qr}">Remove it from this phone</a>
         </p>` : ""}`;
-
-    // The screen is up and readable. Only now go looking for the picture.
-    // The facts about the lift are what somebody standing in front of it
-    // needs; the photo is worth waiting for but never worth waiting on.
-    if (machine.photo) loadPhoto(machine.photo);
   }
 }
 
@@ -1754,135 +1735,51 @@ function show(code) {
 // ---------------------------------------------------------------------------
 // THE PHOTO
 //
-// Taken at intake, filed in Drive by the Apps Script, and handed back here by
-// that same script rather than by Drive itself. That detour is the whole
-// point: the script runs as the account that owns the pictures and is
-// published so that anyone may call it, so a phone gets the photo without a
-// Google login, a sharing setting, or a "request access" screen.
+// Taken at intake and filed in Drive by the Apps Script, which leaves the
+// file link-shared. The app points an <img> straight at Drive's thumbnail
+// service and Drive resizes it on their side.
 //
-// A web app cannot return raw image bytes, so it arrives as base64 text
-// inside JSON and becomes a picture again on this side.
+// This went the long way round first — the Apps Script read the file and
+// handed back base64, on the assumption that a Drive address would demand a
+// Google sign-in. It does not. It is the /view PAGE that asks people to sign
+// in; the image itself is served to anyone with the link. Measuring settled
+// it: half a second and 195KB this way, three seconds and 479KB the other.
+//
+// So there is no fetch here, and nothing of ours between the browser and the
+// picture. Drive sends Cache-Control: max-age=86400, which means the phone
+// reuses it for a day without asking anyone — including, for that day, with
+// no signal at all.
 // ---------------------------------------------------------------------------
 
-// Photos are kept in a box of their own, and the name has no version in it.
-//
-// sw.js throws away every cache that is not the current app version. That is
-// exactly right for app files and would be ruinous here: every stored picture
-// would vanish the next time we shipped a change, which would make keeping
-// them pointless. The worker is told to leave this one alone.
-const PHOTO_CACHE = "lift-register-photos";
-
-// About 40MB at the size these come out — sized so nearly the whole fleet
-// fits, while the box still cannot run away. Nothing evicts for us: the cache
-// has no expiry and no size limit of its own, so an unpruned box is a bucket
-// with no overflow.
-const PHOTO_KEEP = 100;
-
-
-// Reserve the space. No src yet — nothing is fetched until loadPhoto runs.
 function photoBlock(machine) {
   if (!machine.photo) return "";
 
+  // w1000 is about right for a band this size on a phone that packs three
+  // device pixels into every one it admits to.
+  const src = "https://drive.google.com/thumbnail?id=" +
+              encodeURIComponent(machine.photo) + "&sz=w1000";
+
   return `
     <figure class="photo" id="photo">
-      <div class="photo-wait working">Loading photo…</div>
+      <img src="${src}" onerror="photoFailed(this)"
+           alt="This machine, photographed when it arrived on site">
     </figure>`;
 }
 
 
-// Every way this can fail ends the same way: a line of grey text where the
-// picture would have been. Nothing is thrown, so a hall with no signal looks
-// exactly like a lift that never had a photo — and the rest of the screen,
-// the scan form, and the queue behind it carry on untouched.
-async function loadPhoto(id) {
-  const frame = document.getElementById("photo");
+// The picture did not arrive. Almost always no signal; occasionally a file
+// whose sharing never took when it was filed. From here those look identical,
+// so ask the phone which it is rather than guessing wrong at somebody.
+//
+// Either way it ends as a line of grey text. A missing photo is not an error,
+// and nothing else on the screen knows or cares that this happened.
+function photoFailed(image) {
+  const frame = image.parentNode;
   if (!frame) return;
 
-  const url = ENDPOINT + "?photo=" + encodeURIComponent(id);
-
-  try {
-    // The phone first. A picture already here costs no network at all, which
-    // is the entire point — the second look at a machine is instant, and it
-    // works in a hall with no signal.
-    let result = await photoFromPhone(url);
-
-    if (!result) {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("the script would not answer");
-
-      // Keep the clone, read the original.
-      //
-      // A response body can only be read ONCE. Hand the same one to both the
-      // cache and the parser and whichever goes second gets nothing — which
-      // stores perfectly happily, reports no error, and shows an empty
-      // picture from then on. This one line is the whole difference.
-      await keepPhotoOnPhone(url, response.clone());
-      result = await response.json();
-    }
-
-    if (!result.ok || !result.data) throw new Error("no photo came back");
-
-    // Let it finish decoding before it goes up, so it appears whole rather
-    // than painting in from the top.
-    const image = new Image();
-    image.alt = "This machine, photographed when it arrived on site";
-
-    image.onload = () => {
-      frame.innerHTML = "";
-      frame.appendChild(image);
-    };
-    image.onerror = () => photoFailed(frame);
-    image.src = result.data;
-
-  } catch (err) {
-    photoFailed(frame);
-  }
-}
-
-
-// What the phone already has, or nothing at all. Never throws: a browser that
-// will not open its own cache should still be able to go and fetch.
-async function photoFromPhone(url) {
-  try {
-    if (!("caches" in window)) return null;
-
-    const cache  = await caches.open(PHOTO_CACHE);
-    const stored = await cache.match(url);
-
-    return stored ? await stored.json() : null;
-  } catch (err) {
-    return null;
-  }
-}
-
-
-// Put it away, then trim back to the cap.
-async function keepPhotoOnPhone(url, response) {
-  try {
-    if (!("caches" in window)) return;
-
-    const cache = await caches.open(PHOTO_CACHE);
-    await cache.put(url, response);
-
-    // keys() gives them back in the order they went in, so the ones to drop
-    // are at the front. Straight after a put is the only moment the box can
-    // have grown, so it is the only moment worth checking.
-    const keys = await cache.keys();
-    if (keys.length > PHOTO_KEEP) {
-      for (const old of keys.slice(0, keys.length - PHOTO_KEEP)) {
-        await cache.delete(old);
-      }
-    }
-  } catch (err) {
-    // Out of room, or a phone that refuses to store. The picture is already
-    // on the screen either way — failing to keep it is a small loss, and
-    // never worth turning into an error somebody has to look at.
-  }
-}
-
-
-function photoFailed(frame) {
-  frame.innerHTML = `<div class="photo-wait">Photo needs signal</div>`;
+  frame.innerHTML = navigator.onLine
+    ? `<div class="photo-wait">Photo didn't load</div>`
+    : `<div class="photo-wait">Photo needs signal</div>`;
 }
 
 
