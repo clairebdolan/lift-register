@@ -720,7 +720,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 57";
+const APP_VERSION = "build 58";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -874,7 +874,16 @@ function recordScan(code) {
 
   const entry = {
     id: newId(),        // so the sheet can tell a repeat send from a new scan
-    qr: code,
+
+    // The tag, which is blank for a lift that has not got one. A machine can
+    // be written up without a tag — one that fell off in a hall, or one that
+    // has never had one — and the record is filed against its unit number and
+    // serial instead. Putting the stand-in key in here would write U-147389
+    // into the Tag column and invent a tag that does not exist.
+    qr: machine.qr || "",
+
+    // Which screen this came from, so the confirmation lands on the right one.
+    key: code,
     name: name,
     project: document.getElementById("project").value,   // who is using it
     job: machine.job || "",                              // who it is rented to
@@ -1312,6 +1321,12 @@ function keyOf(machine) {
 // toUpperCase() so a lowercase a4x7 still works.
 function findMachine(code) {
   const want = (code || "").toUpperCase();
+
+  // Nothing is not a machine. Without this an empty code matches the first
+  // lift in the register that has no tag, which is a quiet way to put one
+  // machine's record onto another.
+  if (!want) return undefined;
+
   return register().find(m => m.qr === want || keyOf(m) === want);
 }
 
@@ -1650,10 +1665,10 @@ function show(code) {
             </div>`).join("")}
 
           ${scans.map(s => {
-            const machine = findMachine(s.qr);
+            const machine = findMachine(s.key || s.qr);
             return `
               <div class="entry">
-                Scan &middot; ${machine ? machine.desc : s.qr}<br>
+                Scan &middot; ${machine ? machine.desc : (s.desc || "Unit #" + s.unit)}<br>
                 <span class="meta">${s.name} &middot; ${s.place}
                 &middot; ${whenText(s.at)}</span>
               </div>`;
@@ -1990,13 +2005,7 @@ function show(code) {
           </div>
         </dl>
       </div>
-      ${machine.qr ? useBlock(machine) : `
-        <div class="card missing">
-          <h1>Nothing to scan yet</h1>
-          <p>This lift is in the register but has no QR tag on it. Put a blank
-          tag on the machine, scan it, and fill in the survey — the unit number
-          is what joins the two together.</p>
-        </div>`}
+      ${useBlock(machine)}
       <button class="btn secondary" data-scan>Scan another tag</button>
       ${onlyOnThisPhone(machine.qr) ? `
         <p class="note">
@@ -2088,7 +2097,7 @@ function useBlock(machine) {
   const lastPlace = localStorage.getItem(LAST_PLACE) || "";
   const lastProject = localStorage.getItem(LAST_PROJ) || "";
 
-  if (justSaved && justSaved.qr === machine.qr) {
+  if (justSaved && justSaved.key === keyOf(machine)) {
     const faulty = justSaved.condition !== "Good";
 
     return `
@@ -2164,7 +2173,7 @@ function useBlock(machine) {
         of the building and ready for pick up.
       </div>
 
-      <button class="btn" data-record="${machine.qr}">Submit</button>
+      <button class="btn" data-record="${keyOf(machine)}">Submit</button>
     </div>`;
 }
 
