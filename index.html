@@ -720,7 +720,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 58";
+const APP_VERSION = "build 59";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -1539,7 +1539,19 @@ async function fetchUntagged() {
 
     if (!result.ok || !Array.isArray(result.untagged)) return;
 
-    localStorage.setItem(UNTAGGED_STORE, JSON.stringify(result.untagged));
+    const before = localStorage.getItem(UNTAGGED_STORE) || "";
+    const after  = JSON.stringify(result.untagged);
+
+    localStorage.setItem(UNTAGGED_STORE, after);
+
+    // This list nearly always lands after the screen has been drawn, and
+    // until now nothing redrew it. So lifts pasted into the sheet a minute
+    // ago were not on ALL LIFTS until the app was opened a second time —
+    // which from the outside looks exactly like the paste not working.
+    //
+    // Only the rows are redrawn, not the whole screen, so anything already
+    // typed in the search box stays where it is.
+    if (after !== before && document.getElementById("lifts")) drawLifts();
 
   } catch (err) {
     // Keep the copy we have.
