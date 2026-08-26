@@ -12,6 +12,13 @@
 <link rel="icon" href="icon-lr-2.png">
 <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-title" content="Lift Register">
+
+<!-- Opens without Safari's address bar and buttons. Newer iOS reads this off
+     manifest.json on its own, but older iPads only look at this line — and
+     without it Add to Home Screen makes a bookmark, not an app, and its
+     storage is Safari's rather than the app's own. One less toggle to
+     remember in the trailer. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#13406A">
 
 <!-- Shake hands early.
@@ -720,7 +727,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 59";
+const APP_VERSION = "build 60";
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -1571,12 +1578,21 @@ function siteSummary() {
   // Only the tagged ones. A machine nobody can scan has not gone quiet, it
   // has never been given a voice — counting those would put the whole yard
   // in the warning and make the number worth nothing.
-  const quiet = lifts.filter(m => m.qr && daysQuiet(m) >= 7).length;
+  const tagged = lifts.filter(m => m.qr);
+  const quiet  = tagged.filter(m => daysQuiet(m) >= 7).length;
+
+  // And with nothing tagged, "all scanned this week" is simply untrue — not
+  // one of them can be scanned. Say what is actually holding the job up.
+  const state = !tagged.length
+    ? `&middot; <span class="quiet">none tagged yet</span>`
+    : quiet
+      ? `&middot; <span class="quiet">${quiet} not scanned in 7 days</span>`
+      : "&middot; all scanned this week";
 
   return `
     <p class="summary">
       <strong>${lifts.length}</strong> ${lifts.length === 1 ? "lift" : "lifts"} on site
-      ${quiet ? `&middot; <span class="quiet">${quiet} not scanned in 7 days</span>` : "&middot; all scanned this week"}
+      ${state}
     </p>`;
 }
 
