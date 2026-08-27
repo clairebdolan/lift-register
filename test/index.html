@@ -743,7 +743,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 68";
+const APP_VERSION = "build 69";
 
 
 // ---------------------------------------------------------------------------
@@ -2200,11 +2200,11 @@ function show(code) {
     app.innerHTML = `
       <!-- Says what the list is BEFORE anybody searches it and comes up
            empty. The button says equipment because that is what it will be;
-           today the system holds aerial lifts and nothing else, and a man
-           hunting for a welder should learn that here rather than concluding
-           the app is broken. -->
-      <p class="count">Aerial lifts only for now — nothing else is in the
-      system yet.</p>
+           today it holds lifts - aerial and fork - and nothing else, and a
+           man hunting for a welder should learn that here rather than
+           concluding the app is broken. -->
+      <p class="count">Aerial and fork lifts only for now — nothing else is
+      in the system yet.</p>
 
       <select class="find" id="jobFilter">
         <option value="">Sort by Job #</option>
