@@ -157,10 +157,13 @@
     color: #fff;
   }
 
-  /* THE TEST COPY. Same file, different address. This stripe and the word
-     after the name are the only way to tell at a glance which one is open,
-     and the whole point of a test app is never having to wonder. */
-  body.is-test .head   { background: #B34700; }
+  /* THE TEST COPY. Same file, different address.
+
+     The bar stays navy on purpose. It was orange, and that made the one job
+     of a test app impossible — you cannot judge how a screen looks against a
+     colour the real app does not have. The word after the name and the
+     footer say which copy this is; the orange lives on the home screen icon,
+     where it does its job before the app is even open. */
   body.is-test .brand::after { content: " \00B7 TEST"; opacity: 0.72; }
 
   .card {
@@ -733,7 +736,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 64";
+const APP_VERSION = "build 65";
 
 
 // ---------------------------------------------------------------------------
@@ -834,12 +837,16 @@ const LOCATIONS = [
   "ADMIN", "1st Floor Hallway", "2nd Floor Hallway"
 ];
 
-// The one option that is not a room in the building. Picking it opens a box.
+// The option on the end of a dropdown that means "none of these". Picking it
+// opens a box underneath.
 //
-// It exists because the alternative is worse: a man standing somewhere the
-// list does not cover picks the nearest-sounding room, and from then on that
-// room means two places and nobody can tell which.
-const PLACE_OTHER = "Other";
+// It exists because the alternative is worse: somebody whose answer is not on
+// the list picks the nearest-sounding one, and from then on that answer means
+// two things and nobody can tell which.
+//
+// One constant, used by the location field and the vendor field both, so the
+// code that opens the box can be written once and work for either.
+const OTHER = "Other";
 
 // The last few locations used on this phone, newest first.
 //
@@ -883,7 +890,7 @@ function locationOptions(selected) {
   const isOther = Boolean(selected) && !LOCATIONS.includes(selected);
 
   return group("Recent", recent) + group("All locations", LOCATIONS) +
-    `<option ${isOther ? "selected" : ""}>${PLACE_OTHER}</option>`;
+    `<option ${isOther ? "selected" : ""}>${OTHER}</option>`;
 }
 
 
@@ -918,7 +925,7 @@ function locationBlock(field, selected) {
 function placeFrom(field) {
   const picker = document.getElementById(field);
   if (!picker) return "";
-  if (picker.value !== PLACE_OTHER) return picker.value;
+  if (picker.value !== OTHER) return picker.value;
 
   const box = document.getElementById(field + "Other");
   return box ? box.value.trim() : "";
@@ -1064,7 +1071,7 @@ async function addLift() {
     id: newId(),
     qr:     intakeCode,
     job:    val("inJob"),
-    vendor: val("inVendor"),
+    vendor: vendorFrom("inVendor"),
     unit:   val("inUnit"),
     serial: val("inSerial"),
     po:     val("inPo"),          // may be blank
@@ -1347,7 +1354,7 @@ function sendRequest() {
     name:      val("reqName"),
     job:       val("reqJob"),
     equipment: val("reqWhat"),
-    vendor:    val("reqVendor"),
+    vendor:    vendorFrom("reqVendor"),
     at:        new Date().toISOString()
   };
 
@@ -1407,7 +1414,7 @@ function sendService() {
     project: document.getElementById("svcProject").value,
     unit:    val("svcUnit"),
     place:   placeFrom("svcWhere"),
-    vendor:  document.getElementById("svcVendor").value,
+    vendor:  vendorFrom("svcVendor"),
     fault:   val("svcFault"),
     at:      new Date().toISOString()
   };
@@ -2024,11 +2031,8 @@ function show(code) {
           <textarea class="finput" id="reqWhat" rows="3"
                     placeholder="Size, type, and what it's for"></textarea>
 
-          <label class="flabel" for="reqVendor">Preferred vendor</label>
-          <select class="finput" id="reqVendor">
-            <option>No preference</option>
-            ${VENDORS.map(v => `<option>${v}</option>`).join("")}
-          </select>
+          ${vendorBlock("reqVendor", "Preferred vendor",
+                        `<option>No preference</option>`)}
 
           <p class="warn-text" id="reqWarn"></p>
           <button class="btn" data-sendrequest>Send request</button>
@@ -2077,11 +2081,8 @@ function show(code) {
           <!-- No "no preference" here, unlike asking for equipment. This is
                the company that gets phoned, so leaving it blank just moves
                the work back to whoever reads the email. -->
-          <label class="flabel" for="svcVendor">Vendor</label>
-          <select class="finput" id="svcVendor">
-            <option value="">Which vendor?</option>
-            ${VENDORS.map(v => `<option>${v}</option>`).join("")}
-          </select>
+          ${vendorBlock("svcVendor", "Vendor",
+                        `<option value="">Which vendor?</option>`)}
 
           <label class="flabel" for="svcFault">What's wrong?</label>
           <textarea class="finput" id="svcFault" rows="4"
@@ -2145,11 +2146,8 @@ function show(code) {
           ${PROJECTS.map(j => `<option>${j}</option>`).join("")}
         </select>
 
-        <label class="flabel" for="inVendor">Vendor</label>
-        <select class="finput" id="inVendor">
-          <option value="">Choose one</option>
-          ${VENDORS.map(v => `<option>${v}</option>`).join("")}
-        </select>
+        ${vendorBlock("inVendor", "Vendor",
+                      `<option value="">Choose one</option>`)}
 
         <label class="flabel" for="inUnit">Unit #</label>
         <input class="finput" id="inUnit" type="text" autocomplete="off"
@@ -2582,6 +2580,46 @@ let supportSent = null;
 const VENDORS = [
   "Opifex", "Texas First", "United Rentals", "Sunstate", "Equipment Share"
 ];
+
+// The vendor field: the dropdown, and the box that appears when the company
+// is not one of ours.
+//
+// Same shape as locationBlock, and there for the same reason — this is on
+// three screens now, and three copies of a list would drift.
+//
+// The first option differs by screen: asking for equipment allows no
+// preference, a service request insists on somebody to phone, and intake
+// wants the company the machine actually came from. So it is passed in.
+function vendorBlock(field, label, first) {
+  return `
+    <label class="flabel" for="${field}">${label}</label>
+    <select class="finput" id="${field}">
+      ${first}
+      ${VENDORS.map(v => `<option>${v}</option>`).join("")}
+      <option>${OTHER}</option>
+    </select>
+
+    <div id="${field}OtherWrap" hidden>
+      <label class="flabel" for="${field}Other">Which company?</label>
+      <input class="finput" id="${field}Other" type="text"
+             placeholder="The company's name" autocomplete="off"
+             autocapitalize="words">
+      <p class="warn-text" id="${field}OtherWarn"></p>
+    </div>`;
+}
+
+
+// What the vendor field actually says: the company picked, or the one typed
+// into the box when it was not on the list.
+function vendorFrom(field) {
+  const picker = document.getElementById(field);
+  if (!picker) return "";
+  if (picker.value !== OTHER) return picker.value;
+
+  const box = document.getElementById(field + "Other");
+  return box ? box.value.trim() : "";
+}
+
 
 // How many screens deep into the app we are, so Back knows whether there is
 // anywhere to go back to.
@@ -3141,15 +3179,15 @@ document.addEventListener("change", event => {
     if (!wrap.hidden) document.getElementById("fault").focus();
   }
 
-  // None of the rooms fit. Open a box, rather than making somebody pick the
-  // nearest-sounding wrong one.
-  if (event.target.id === "where" || event.target.id === "svcWhere") {
-    const wrap = document.getElementById(event.target.id + "OtherWrap");
+  // Any dropdown that has an Other box built under it — location on two
+  // screens, vendor on three. Written once against the naming rather than
+  // once per field, so adding the next one is a call to the block and
+  // nothing here.
+  const otherWrap = document.getElementById(event.target.id + "OtherWrap");
 
-    if (wrap) {
-      wrap.hidden = event.target.value !== PLACE_OTHER;
-      if (!wrap.hidden) document.getElementById(event.target.id + "Other").focus();
-    }
+  if (otherWrap) {
+    otherWrap.hidden = event.target.value !== OTHER;
+    if (!otherWrap.hidden) document.getElementById(event.target.id + "Other").focus();
   }
 
   // Asking for a call off comes with somewhere to put the machine.
