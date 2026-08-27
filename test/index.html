@@ -795,16 +795,14 @@ if (IS_TEST) {
 // tried out on the test phone can ever turn up in the real register.
 const LIVE_ENDPOINT = "https://script.google.com/macros/s/AKfycbw8MM_crqCtagSZzM1xXbnSQEhgQg1jc0G1buNIMCbCNa7PQRISLYnbgSVX2SWZmR_0AA/exec";
 
-// The test sheet, once it exists. Replace this whole address with the one
-// Google gives you when the TEST sheet is deployed.
+// The TEST sheet — a copy of the register, deployed 2026-08-27. Only the
+// test app writes here, so a test scan can never land in the real register.
 //
-// Until then it points at a host that CANNOT EXIST — .invalid is reserved by
-// the standards people precisely so it can never be a real address, so every
-// send fails at the first hurdle and the test app behaves exactly like a
-// phone in a hall with no signal: everything queues, nothing goes anywhere.
-// A wrong address that always fails is safer than a blank one, because a
-// blank one quietly means "send it to wherever this page came from".
-const TEST_ENDPOINT = "https://test-sheet-not-set-up-yet.invalid/exec";
+// This is a different Apps Script attached to a different spreadsheet, which
+// is why the address is completely different and not a setting on the one
+// above. If this script is ever changed, remember it needs Deploy > Manage
+// deployments > New version, or the phone keeps talking to the old code.
+const TEST_ENDPOINT = "https://script.google.com/macros/s/AKfycbxRUMOjStqAGcCZKzS5Hv8O8ZlU6yRtpdMZYrmRqJvHDOt1lcQmv8k5Hmdl1JAttOKU1g/exec";
 
 const ENDPOINT = IS_TEST ? TEST_ENDPOINT : LIVE_ENDPOINT;
 
