@@ -494,6 +494,13 @@
   .btn.red          { background: var(--serial); }
   .btn.red:active   { background: #7F211A; }
 
+  /* Company grey. Asking for a machine that is not on site yet is a want,
+     not an emergency, and it should not shout the way a broken lift does.
+     White on this grey is about 5.9:1, so it still reads at arms length in
+     a bright hall. */
+  .btn.grey         { background: var(--ink-2); }
+  .btn.grey:active  { background: #4C5054; }
+
   .btn.secondary {
     margin-top: 18px;
     margin-bottom: 0;
@@ -736,7 +743,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 66";
+const APP_VERSION = "build 67";
 
 
 // ---------------------------------------------------------------------------
@@ -2254,7 +2261,7 @@ function show(code) {
         ADD EQUIPMENT TAG
       </button>
 
-      <button class="btn red" data-request>
+      <button class="btn grey" data-request>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M7 4h10l3 3v13H7z"/><path d="M17 4v3h3"/>
           <path d="M10 12h6"/><path d="M10 16h4"/>
