@@ -1,0 +1,3070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lift Register</title>
+
+<!-- The home screen icon: LR in white on company navy, cut from the Loenbro
+     wordmark. iOS rounds the corners itself, so the file is a full square.
+     The name under the icon stays "Lift Register". -->
+<link rel="apple-touch-icon" href="icon-lr-2.png">
+<link rel="icon" href="icon-lr-2.png">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-title" content="Lift Register">
+
+<!-- Opens without Safari's address bar and buttons. Newer iOS reads this off
+     manifest.json on its own, but older iPads only look at this line — and
+     without it Add to Home Screen makes a bookmark, not an app, and its
+     storage is Safari's rather than the app's own. One less toggle to
+     remember in the trailer. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#13406A">
+
+<!-- Shake hands early.
+     A phone opening this app has never spoken to either of these hosts, and
+     before one byte can arrive it has to look up the name, open a connection
+     and negotiate encryption. On a phone that is a third of a second each,
+     and it is spent AFTER somebody has already scanned a tag and is waiting.
+     Doing it here, while the app is still starting, means the wire is already
+     open by the time anything is asked for.
+       lh3  — Drive's image host, where the intake photos come from
+       script.google.com — the sheet the register is read from, every open -->
+<link rel="preconnect" href="https://lh3.googleusercontent.com" crossorigin>
+<link rel="preconnect" href="https://script.google.com">
+
+<style>
+  /* Libre Franklin, an open revival of Franklin Gothic — the family the
+     Loenbro wordmark is cut from. The file lives in this folder rather than
+     being fetched from Google, so the app looks the same on every phone and
+     still looks right with no signal. Latin characters only, 16KB. */
+  @font-face {
+    font-family: "Libre Franklin";
+    src: url("librefranklin-800.woff2") format("woff2");
+    font-weight: 800;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  :root {
+    --bg: #EDEEEC;
+    --card: #FFFFFF;
+    --ink: #16191A;
+    --ink-2: #60656B;   /* company grey */
+    --ink-3: #8C9197;   /* company grey, lightened */
+    --line: #D3D8D5;
+    --accent: #1B6873;   /* teal */
+    --navy:   #13406A;   /* company navy */
+    --navy-2: #0E3152;   /* navy, pressed */
+    --serial: #9F2A21;   /* company red */
+    --good: #2E6B45;
+    --good-bg: #DCEBE2;
+    --warn: #8A5A17;
+    --warn-bg: #F4E9D8;
+    --off: #6B7477;
+    --off-bg: #E3E6E5;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 17px;
+    line-height: 1.5;
+    padding: 20px 18px 60px;
+  }
+
+  .wrap { max-width: 520px; margin: 0 auto; }
+
+  /* A navy band across the top: the way back on the left, the name beside
+     it. Sticky, so on a list of 150 lifts the way out is always one tap. */
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    background: var(--navy);
+    margin: -20px -18px 20px;      /* out to the screen edges */
+    padding: 15px 18px;
+  }
+
+  /* ---- the menu drawer --------------------------------------------------- */
+  .drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+  }
+  .drawer[hidden] { display: none; }
+
+  .drawerpane {
+    width: 74%;
+    max-width: 320px;
+    background: var(--card);
+    padding: 18px 22px;
+    box-shadow: 0 0 30px rgba(0,0,0,0.25);
+    overflow-y: auto;
+  }
+
+  /* The rest of the app, dimmed. Tapping it closes the menu. */
+  .drawerback { flex: 1; background: rgba(0,0,0,0.35); }
+
+  /* Plain rows. No boxes — the icon and the word are the whole thing. */
+  .drawernav a {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 15px 0;
+    font-size: 17px;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .drawernav a:active { color: var(--navy); }
+
+  .drawernav svg {
+    width: 23px;
+    height: 23px;
+    flex: none;
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .menubtn {
+    border: none;
+    background: none;
+    color: #fff;
+    font-size: 26px;
+    line-height: 1;
+    padding: 2px 2px;
+  }
+
+  .brand {
+    font-family: "Libre Franklin", "Franklin Gothic Heavy",
+                 "Avenir Next Condensed", Arial, sans-serif;
+    font-weight: 800;
+    font-size: 21px;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+    color: #fff;
+  }
+
+  /* THE TEST COPY. Same file, different address. This stripe and the word
+     after the name are the only way to tell at a glance which one is open,
+     and the whole point of a test app is never having to wonder. */
+  body.is-test .head   { background: #B34700; }
+  body.is-test .brand::after { content: " \00B7 TEST"; opacity: 0.72; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .card-top {
+    padding: 20px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* Temporary build-time label — greyed down so it cannot be mistaken for
+     the unit number. Deleted before the field pilot. */
+  .code {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    color: var(--ink-3);
+  }
+
+  /* Vendor descriptions are long and all-caps, so this is sized to fit one
+     on a phone without wrapping to three lines. */
+  h1 { font-size: 21px; line-height: 1.25; margin: 0; letter-spacing: 0; }
+
+  .pill {
+    align-self: flex-start;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 3px;
+  }
+  .pill.active     { background: var(--good-bg); color: var(--good); }
+  .pill.calledoff  { background: var(--warn-bg); color: var(--warn); }
+  .pill.pickedup   { background: var(--off-bg);  color: var(--off);  }
+
+  /* The status, with the PO alongside it. Wraps onto its own line rather than
+     squeezing the pill if a long number and a narrow phone ever meet. */
+  .statusline {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  /* Deliberately quiet. Nobody standing at a lift needs the PO — it is what
+     makes this machine reconcile against a vendor's invoice weeks later, so
+     it belongs on the screen without competing with anything on it. */
+  .po {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--ink-3);
+  }
+
+  dl { margin: 0; }
+
+  /* One line per fact, reading "Label: value" left to right.
+     The two number rows carry a coloured bar so a glance tells them apart. */
+  .row {
+    padding: 13px 20px;
+    border-bottom: 1px solid var(--line);
+    border-left: 4px solid transparent;
+  }
+  .row:last-child { border-bottom: none; }
+  .row.job    { border-left-color: var(--ink); }
+  .row.unit   { border-left-color: var(--navy); }
+  .row.serial { border-left-color: var(--serial); }
+
+  .row .k {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--ink-2);
+  }
+  .row .v {
+    font-size: 17px;
+    font-weight: 650;
+    color: var(--ink);
+    word-break: break-word;
+  }
+  .row .v.mono { font-family: var(--mono); font-size: 19px; letter-spacing: 0.02em; }
+  .row.unit   .v { color: var(--navy); }
+  .row.serial .v { color: var(--serial); }
+
+  /* Says where the number comes from, so nobody reads the wrong one off
+     the machine. Colour alone is not enough of a difference. */
+  .row .hint {
+    display: block;
+    margin-top: 3px;
+    font-size: 12.5px;
+    color: var(--ink-3);
+    font-weight: 400;
+  }
+
+  /* The picture taken when the machine arrived on site.
+     The height is fixed, so the space is held from the moment the screen
+     draws and nothing jumps when the photo lands a second later. "contain"
+     rather than "cover" because this is condition evidence — a crop that
+     hides the damaged corner defeats the point of having it. */
+  /* Sits between the title band and the facts. The band above already draws
+     a line under itself, so this one only needs a line below — a border on
+     both sides would read as two rules with a gap. */
+  .photo {
+    margin: 0;
+    height: 200px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* Stands in for the picture while it is coming, and stays there if it
+     never does. Grey and quiet: a missing photo is not an error. */
+  .photo-wait {
+    font-size: 14px;
+    color: var(--ink-3);
+  }
+
+
+  .note {
+    margin-top: 22px;
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+
+  a { color: var(--navy); }
+
+  /* the list you see when no machine is specified */
+  .list { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+  .list a {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 15px 18px;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .list a:active { background: var(--bg); }
+  .list .lbl { font-weight: 600; font-size: 15px; }
+  .list .sub { font-size: 13px; color: var(--ink-3); }
+  .list .qr { font-family: var(--mono); font-size: 14px; color: var(--accent); }
+
+  .lede { color: var(--ink-2); font-size: 15px; margin: 0 0 18px; }
+
+  .missing { padding: 26px 20px; text-align: center; }
+  .missing h1 { font-size: 22px; margin-bottom: 8px; }
+  .missing p { color: var(--ink-2); font-size: 15px; margin: 0; }
+
+  /* ---- the scan form ---------------------------------------------------- */
+  .form { margin-top: 18px; padding: 18px 20px 20px; }
+
+  .flabel {
+    display: block;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--ink-2);
+    margin-bottom: 6px;
+  }
+
+  /* Both the text box and the dropdown. 17px is not a style choice — an
+     iPhone zooms the whole page in when you tap anything smaller. */
+  .finput {
+    display: block;
+    width: 100%;
+    padding: 13px 12px;
+    margin-bottom: 16px;
+    font-family: inherit;
+    font-size: 17px;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+  .finput:last-of-type { margin-bottom: 20px; }
+
+  .recorded {
+    margin-top: 18px;
+    padding: 18px 20px;
+    border-left: 4px solid var(--good);
+  }
+  .recorded p { margin: 0; }
+  .recorded .who { font-weight: 600; }
+  .recorded .sub { margin-top: 6px; font-size: 14px; color: var(--ink-2); }
+
+  .warn-text { color: var(--warn); font-size: 14px; margin: -8px 0 14px; }
+
+  .opt { color: var(--ink-3); font-weight: 400; }
+
+  /* Something the app is refusing to do, and why. */
+  .errorcard {
+    padding: 22px 20px;
+    border-left: 4px solid var(--serial);
+    margin-bottom: 20px;
+  }
+  .errorhead {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    color: var(--serial);
+    margin: 0 0 8px;
+  }
+  .errorcard h1 { font-size: 20px; margin-bottom: 10px; }
+  .errorcard .sub { font-size: 15px; color: var(--ink-2); margin: 0 0 8px; }
+  .errorcard .sub:last-child { margin-bottom: 0; }
+
+  .taghead {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    color: var(--ink-3);
+    margin: 0 0 16px;
+  }
+  .taghead strong { color: var(--navy); font-size: 16px; }
+
+  /* An instruction the operator has to act on, not just information. Sits
+     apart from the form so it doesn't read as another field. */
+  .instruct {
+    margin: -4px 0 20px;
+    padding: 14px 16px;
+    border-radius: 4px;
+    background: var(--good-bg);
+    color: var(--good);
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  /* A recorded scan that reported a fault. Different colour so it does not
+     read as "all good" at a glance. */
+  .recorded.flagged { border-left-color: var(--warn); }
+  .scans .flag { color: var(--warn); }
+
+  /* The list of what this phone has recorded. Scaffolding, for now — it is
+     how you check the thing is working without a server to look at. */
+  .scans { margin-top: 30px; }
+  .scans h2 {
+    font-size: 12px;
+    font-family: var(--mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 10px;
+  }
+  .scans .entry {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+  }
+  .scans .entry:last-child { border-bottom: none; }
+  .scans .entry .meta { color: var(--ink-3); }
+
+  /* Big primary action. Sized for a thumb in a glove, not a mouse.
+     The hard shadow underneath and the shift on press are what make it feel
+     like a button being pushed rather than a coloured rectangle. */
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    padding: 17px;
+    margin-bottom: 16px;
+    border: none;
+    border-radius: 6px;
+    background: var(--navy);
+    background-image: linear-gradient(rgba(255,255,255,0.10), rgba(0,0,0,0.07));
+    color: #fff;
+    font-family: inherit;
+    font-size: 18px;
+    font-weight: 600;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.22), 0 5px 12px rgba(0,0,0,0.14);
+    transition: transform 0.04s ease, box-shadow 0.04s ease;
+  }
+  .btn:active {
+    transform: translateY(3px);
+    box-shadow: 0 0 0 rgba(0,0,0,0.22), 0 2px 5px rgba(0,0,0,0.14);
+  }
+
+  .btn svg {
+    width: 22px;
+    height: 22px;
+    flex: none;
+    fill: none;
+    stroke: #fff;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* Scanning is most of what happens here, so it is taller than the rest. */
+  .btn.first { padding: 24px 17px; font-size: 20px; margin-bottom: 22px; }
+  .btn.first svg { width: 26px; height: 26px; }
+
+  /* What the job looks like right now, above the buttons. */
+  .summary {
+    margin: -4px 0 18px;
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+  .summary strong { color: var(--ink); font-weight: 650; }
+  .summary .quiet { color: var(--serial); font-weight: 650; }
+
+  /* Every button is navy now. The class is kept so the markup does not have
+     to change if a second colour is ever wanted. */
+  .btn.navy         { background: var(--navy); }
+  .btn.navy:active  { background: var(--navy-2); }
+
+  /* Company red. Scanning a tag is the thing people are here to do, so it
+     is the one button that does not look like the others. */
+  .btn.red          { background: var(--serial); }
+  .btn.red:active   { background: #7F211A; }
+
+  .btn.secondary {
+    margin-top: 18px;
+    margin-bottom: 0;
+    background: transparent;
+    color: var(--navy);
+    border: 1px solid var(--line);
+  }
+
+  /* Search box on the all-lifts screen. Same 17px rule as the form — smaller
+     and the phone zooms the page when you tap it. */
+  .find {
+    display: block;
+    width: 100%;
+    padding: 14px 14px;
+    margin-bottom: 14px;
+    font-family: inherit;
+    font-size: 17px;
+    color: var(--ink);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+
+  .count {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin: 0 0 12px;
+  }
+
+
+  /* ---- camera overlay ----------------------------------------------------
+     Covers the whole screen while scanning. Black, because anything else
+     competes with the camera picture for attention. */
+  .scanner {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .scanner[hidden] { display: none; }
+
+  .scanner video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* The square you aim with. It is only a hint — the decoder reads the whole
+     picture, not just what is inside the box. */
+  .frame {
+    position: relative;
+    width: 68vw;
+    max-width: 300px;
+    aspect-ratio: 1;
+    border: 3px solid rgba(255,255,255,0.9);
+    border-radius: 10px;
+    box-shadow: 0 0 0 100vmax rgba(0,0,0,0.45);
+  }
+
+  .scanmsg {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 104px;
+    margin: 0;
+    padding: 0 24px;
+    text-align: center;
+    color: #fff;
+    font-size: 16px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+  }
+
+  .cancel {
+    position: absolute;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 14px 34px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.5);
+    background: rgba(0,0,0,0.35);
+    color: #fff;
+    font-family: inherit;
+    font-size: 17px;
+  }
+
+  footer {
+    margin-top: 34px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+</style>
+</head>
+
+<body>
+<div class="wrap">
+  <div class="head">
+    <button class="menubtn" id="headbtn" data-menu aria-label="Menu">&#9776;</button>
+    <div class="brand">Lift Register</div>
+  </div>
+
+  <!-- Everything below gets filled in by the script at the bottom. -->
+  <div id="app"></div>
+
+  <footer>Prototype &middot; <span id="version"></span><span id="pending"></span></footer>
+</div>
+
+<!-- The menu. Slides over the left of the screen; the rest of the app stays
+     visible but dimmed behind it, so it reads as a thing on top rather than
+     a place you have gone. Tapping the dimmed part closes it. -->
+<div class="drawer" id="drawer" hidden>
+  <div class="drawerpane">
+    <nav class="drawernav">
+      <a href="#" data-go-pending>
+        <!-- cloud with an arrow going up: things on their way out -->
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 18a4 4 0 0 1-.4-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18H7z"/>
+          <path d="M12 15V9"/>
+          <path d="M9.5 11.5 12 9l2.5 2.5"/>
+        </svg>
+        Pending Uploads
+      </a>
+
+      <a href="#" data-go-recent>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/>
+        </svg>
+        Recorded equipment
+      </a>
+
+      <a href="#" data-go-support>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M9.6 9.6a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2-2.4 3.5"/>
+          <path d="M12 17.2v.01"/>
+        </svg>
+        Support
+      </a>
+    </nav>
+  </div>
+
+  <div class="drawerback" data-closedrawer></div>
+</div>
+
+<!-- The camera. Hidden until Scan is tapped, then it covers everything.
+     playsinline matters: without it an iPhone takes the video full screen in
+     its own player and the app never gets to look at the picture. -->
+<div class="scanner" id="scanner" hidden>
+  <video id="video" playsinline muted></video>
+  <div class="frame"></div>
+  <p class="scanmsg" id="scanmsg">Point the camera at the tag</p>
+  <button class="cancel" id="cancel">Cancel</button>
+</div>
+
+<!-- The QR decoder. A copy lives in this folder rather than being fetched
+     from someone else's server, so it still works with no signal. -->
+<script src="jsQR.js"></script>
+
+<script>
+// ---------------------------------------------------------------------------
+// 1. THE MACHINES
+//
+// There are none in here. The register lives in the Machines tab of the
+// Google Sheet, and the app reads it — see fetchRegister() further down.
+// Nothing about a machine is written into this file, so a lift can never
+// exist in the app and nowhere else.
+// ---------------------------------------------------------------------------
+
+// Friendly wording for each status code.
+const STATUS_LABEL = {
+  active:    "On rent",
+  calledoff: "Called off",
+  pickedup:  "Picked up"
+};
+
+// Anything in the sheet's Status column that isn't one of those three is
+// treated as on rent.
+//
+// A hundred and fifty rows get typed by hand, and one of them will say
+// "Active" or "on rent" or "actve". None of those should hide a machine from
+// the field, and none of them should put the word "undefined" on a screen in
+// front of somebody stood at a lift.
+function statusOf(machine) {
+  return STATUS_LABEL[machine.status] ? machine.status : "active";
+}
+
+
+// ---------------------------------------------------------------------------
+// 2. WHICH MACHINE WAS SCANNED?
+//
+// The QR tag encodes a web address ending in ?id=A4X7
+// This pulls that "A4X7" back out of the address bar.
+// If there's no id in the address, scannedId is null.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// OFFLINE
+//
+// Hand sw.js to the phone. From here on the phone keeps its own copy of this
+// app and can open it with no signal. This is the only line index.html needs
+// — everything about what gets stored lives in sw.js.
+//
+// The "if" is there because a browser that has never heard of service workers
+// should still show the app, just without the offline part.
+// ---------------------------------------------------------------------------
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").then(registration => {
+
+    // An app on the home screen is usually RESUMED, not reloaded — the phone
+    // brings back the screen it had rather than starting over. Nothing in a
+    // resume asks whether there is a new version, which is how a phone ends
+    // up stuck on an old copy with no way out but deleting the icon.
+    //
+    // So every time the app comes back to the front, ask.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") registration.update();
+    });
+  });
+
+  // A new version has taken over. Reload once, so the screen being shown
+  // matches the files now running behind it.
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloading) return;      // a reload triggers this again — only once
+    reloading = true;
+    window.location.reload();
+  });
+}
+
+
+// Shown in the footer. Bump this whenever we push, so a phone can be asked
+// "what does the bottom of your screen say?" instead of guessing whether it
+// has the update.
+const APP_VERSION = "build 61";
+
+
+// ---------------------------------------------------------------------------
+// 2a. WHICH COPY OF THE APP IS THIS?
+//
+// There are two, and they are the SAME FILE. The live one everybody has:
+//     clairebdolan.github.io/lift-register/
+// and a test one only Claire has:
+//     clairebdolan.github.io/lift-register/test/
+//
+// A change is tried in the test folder first. When it is right, this file is
+// copied over the live one and everybody gets it.
+//
+// That copy only stays safe if the two files are identical, so nothing here
+// is edited by hand to switch between them. The app reads its own address and
+// works out which one it is, which means there is nothing to remember to
+// change back at five o'clock on a Friday.
+// ---------------------------------------------------------------------------
+
+const IS_TEST = location.pathname.includes("/test/");
+
+// A phone gives out one storage locker per WEBSITE, not per folder. Both
+// copies live on clairebdolan.github.io, so without a different prefix the
+// test app would be reading and writing the live app's queued scans. Every
+// stored name below is built from this.
+const KEY = IS_TEST ? "liftregister-test." : "liftregister.";
+
+if (IS_TEST) {
+  document.body.classList.add("is-test");
+
+  // The name that ends up under the icon on the home screen. iOS reads it
+  // at the moment Add to Home Screen is tapped, so setting it here is worth
+  // a try; if that phone ignores it, the orange icon still says which is
+  // which, which is why the icon differs too.
+  document.title = "LR TEST";
+  const appleName = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (appleName) appleName.content = "LR TEST";
+}
+
+
+// ---------------------------------------------------------------------------
+// 2b. WHAT THIS PHONE HAS RECORDED
+//
+// Scans are written to the phone's own storage. Nothing is sent anywhere yet
+// — there is nowhere to send it. That is the next decision to make, and it is
+// a real one: until it is made, a scan exists on exactly one phone.
+//
+// Storing on the phone first is not a shortcut, though. It is the only way a
+// scan in a hall with no signal can be recorded at all. When there is a
+// server, this stays exactly as it is and a sync step gets added on top.
+// ---------------------------------------------------------------------------
+
+// Where scans go when the phone has signal. This is the Apps Script attached
+// to Claire's Google Sheet, published so the app can post to it without a
+// login — which is the whole reason this is on Google and not Microsoft.
+//
+// Two of them: the real register, and a copy of that sheet that only the test
+// app writes to. Test scans and test machines land in the copy, so nothing
+// tried out on the test phone can ever turn up in the real register.
+const LIVE_ENDPOINT = "https://script.google.com/macros/s/AKfycbw8MM_crqCtagSZzM1xXbnSQEhgQg1jc0G1buNIMCbCNa7PQRISLYnbgSVX2SWZmR_0AA/exec";
+
+// The test sheet, once it exists. Replace this whole address with the one
+// Google gives you when the TEST sheet is deployed.
+//
+// Until then it points at a host that CANNOT EXIST — .invalid is reserved by
+// the standards people precisely so it can never be a real address, so every
+// send fails at the first hurdle and the test app behaves exactly like a
+// phone in a hall with no signal: everything queues, nothing goes anywhere.
+// A wrong address that always fails is safer than a blank one, because a
+// blank one quietly means "send it to wherever this page came from".
+const TEST_ENDPOINT = "https://test-sheet-not-set-up-yet.invalid/exec";
+
+const ENDPOINT = IS_TEST ? TEST_ENDPOINT : LIVE_ENDPOINT;
+
+
+const SCAN_STORE  = KEY + "scans";
+const LAST_NAME   = KEY + "lastname";
+const LAST_PLACE  = KEY + "lastplace";
+const LAST_PROJ   = KEY + "lastproject";
+
+// The building. A fixed list on purpose — free text turns into "hall 2",
+// "H2" and "hall two" and stops being countable.
+//
+// Kept in the order Claire gave them, which is the order the building is
+// laid out in, not alphabetical. More will be added.
+const LOCATIONS = [
+  "Data Hall 01", "Data Hall 02", "Data Hall 03", "Data Hall 04", "Data Hall 05",
+  "UPS 1A", "UPS 1B", "UPS 1C",
+  "UPS 2A", "UPS 2B", "UPS 2C",
+  "UPS 3A", "UPS 3B", "UPS 3C",
+  "UPS 4A", "UPS 4B", "UPS 4C",
+  "UPS 5A", "UPS 5B", "UPS 5C",
+  "UPS 1Y", "UPS 2Y",
+  "Data Hall 06", "Data Hall 07", "Data Hall 08", "Data Hall 09", "Data Hall 10",
+  "UPS 1D", "UPS 1Z", "UPS 1E", "UPS 1F",
+  "UPS 2D", "UPS 2Z", "UPS 2E", "UPS 2F",
+  "UPS 3D", "UPS 3Z", "UPS 3E", "UPS 3F",
+  "UPS 4D", "UPS 4E", "UPS 4Z", "UPS 4F",
+  "UPS 5E", "UPS 5F", "UPS 5D", "UPS 5Z",
+  "ADMIN", "1st Floor Hallway", "2nd Floor Hallway"
+];
+
+// The last few locations used on this phone, newest first.
+//
+// A man works one hall all week. Making him scroll past forty rooms to find
+// the one he was in an hour ago is the friction that turns a ten second job
+// into one people skip.
+const RECENT_PLACES = KEY + "recentplaces";
+
+function readRecentPlaces() {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_PLACES)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function rememberPlace(place) {
+  if (!place) return;
+
+  const recent = readRecentPlaces().filter(p => p !== place);
+  recent.unshift(place);
+  localStorage.setItem(RECENT_PLACES, JSON.stringify(recent.slice(0, 3)));
+}
+
+// The dropdown: recent ones at the top, then the building in its own order.
+function locationOptions(selected) {
+  const recent = readRecentPlaces().filter(p => LOCATIONS.includes(p));
+
+  const group = (label, places) => !places.length ? "" : `
+    <optgroup label="${label}">
+      ${places.map(p => `
+        <option ${p === selected ? "selected" : ""}>${p}</option>
+      `).join("")}
+    </optgroup>`;
+
+  return group("Recent", recent) + group("All locations", LOCATIONS);
+}
+
+
+// The jobs on this site. A lift is rented to one of them; the crew using it
+// is sometimes from another, which is exactly what we want to catch.
+const PROJECTS = ["DFW10", "DFW12", "DFW10TFO"];
+
+// Condition always starts at Good and is never pre-filled from last time —
+// yesterday's fault is not today's answer.
+const CONDITIONS = ["Good", "Needs Service", "Missing Controller"];
+
+// The one that opens the "what's wrong with it" box.
+const NEEDS_DETAIL = "Needs Service";
+
+function readScans() {
+  try {
+    return JSON.parse(localStorage.getItem(SCAN_STORE)) || [];
+  } catch (err) {
+    return [];   // storage unreadable — behave as if nothing is recorded
+  }
+}
+
+function writeScans(list) {
+  localStorage.setItem(SCAN_STORE, JSON.stringify(list));
+}
+
+// Today's date as 2026-08-20. en-CA gives that order, and it is the phone's
+// own day — a scan at 11pm belongs to the day the operator thinks it does.
+function today() {
+  return new Date().toLocaleDateString("en-CA");
+}
+
+// There is deliberately no rule about scanning the same machine twice.
+// A lift gets handed between operators and moved between halls in a day, and
+// every one of those is a real use worth recording. Every submit is a row.
+
+function recordScan(code) {
+  const nameField  = document.getElementById("who");
+  const placeField = document.getElementById("where");
+  const condField  = document.getElementById("condition");
+  const noteField  = document.getElementById("fault");
+
+  const name      = nameField.value.trim();
+  const condition = condField.value;
+  const note      = noteField ? noteField.value.trim() : "";
+
+  if (!name) {
+    nameField.focus();
+    document.getElementById("nameWarn").textContent = "Put your name in first.";
+    return;
+  }
+
+  // If someone says it needs service, the useful part is what is wrong with
+  // it. A row saying "Needs Service" and nothing else is a phone call later.
+  if (condition === NEEDS_DETAIL && !note) {
+    noteField.focus();
+    document.getElementById("faultWarn").textContent =
+      "Say what's wrong with it — that is the part that gets it fixed.";
+    return;
+  }
+
+  // Remember these for next time. The whole point of no logins is that the
+  // second scan of the day is one tap.
+  localStorage.setItem(LAST_NAME, name);
+  localStorage.setItem(LAST_PLACE, placeField.value);
+  rememberPlace(placeField.value);
+  localStorage.setItem(LAST_PROJ, document.getElementById("project").value);
+
+  const callOff = document.getElementById("calloff").value === "Yes";
+  const machine = findMachine(code) || {};
+
+  const entry = {
+    id: newId(),        // so the sheet can tell a repeat send from a new scan
+
+    // The tag, which is blank for a lift that has not got one. A machine can
+    // be written up without a tag — one that fell off in a hall, or one that
+    // has never had one — and the record is filed against its unit number and
+    // serial instead. Putting the stand-in key in here would write U-147389
+    // into the Tag column and invent a tag that does not exist.
+    qr: machine.qr || "",
+
+    // Which screen this came from, so the confirmation lands on the right one.
+    key: code,
+    name: name,
+    project: document.getElementById("project").value,   // who is using it
+    job: machine.job || "",                              // who it is rented to
+    place: placeField.value,
+    condition: condition,
+    note: note,
+    callOff: callOff,
+    at: new Date().toISOString(),   // full timestamp, never a local format
+    day: today(),
+
+    // Carried along so the sheet reads on its own, without anyone having to
+    // look up what tag C8M3 is. Nobody types any of this — it is copied off
+    // the machine's row in the register as the scan goes past, which is the
+    // only way it can be right.
+    desc:   machine.desc   || "",
+    vendor: machine.vendor || "",
+    unit:   machine.unit   || "",
+    serial: machine.serial || "",
+    po:     machine.po     || "",
+
+    sent: false
+  };
+
+  const list = readScans();
+  list.push(entry);
+  writeScans(list);
+
+  justSaved = entry;   // so the screen can show what was just submitted
+  show(code);
+  updatePending();
+  sync();              // if there's signal it goes now; if not, it waits
+}
+
+
+// ---------------------------------------------------------------------------
+// ADDING A MACHINE TO THE REGISTER
+//
+// Everything here is typed once, at the dock, by the person standing next to
+// the machine. Getting it right here is worth a lot: every scan afterwards
+// inherits it, and a wrong serial number is a wrong serial number forever.
+// ---------------------------------------------------------------------------
+
+async function addLift() {
+  const warn = document.getElementById("inWarn");
+  const val  = id => document.getElementById(id).value.trim();
+
+  const lift = {
+    id: newId(),
+    qr:     intakeCode,
+    job:    val("inJob"),
+    vendor: val("inVendor"),
+    unit:   val("inUnit"),
+    serial: val("inSerial"),
+    po:     val("inPo"),          // may be blank
+    desc:   val("inDesc"),
+    onRent: val("inDate"),
+    addedBy: val("inName"),
+    addedAt: new Date().toISOString(),
+    status: "active"
+  };
+
+  // Everything except the PO and the photo has to be there. A register with
+  // holes in it is the thing this whole system is trying to replace.
+  const missing =
+    !lift.job    ? "Choose a job number."      :
+    !lift.vendor ? "Choose a vendor."          :
+    !lift.unit   ? "Put in the unit number."   :
+    !lift.serial ? "Put in the serial number." :
+    !lift.desc   ? "Put in the description."   :
+    !lift.addedBy ? "Put your name in."        : "";
+
+  if (missing) {
+    warn.textContent = missing;
+    return;
+  }
+
+  // Is this machine already in the register?
+  //
+  // Usually that is a mistake worth stopping. But now that lifts with no tag
+  // are in the register too, it is also the ordinary way a machine gets its
+  // first tag: somebody sticks one on, scans it, and fills in this form. The
+  // difference is whether the lift we already have is carrying a code.
+  const already = register().find(m =>
+    (m.unit   && m.unit.toLowerCase()   === lift.unit.toLowerCase()) ||
+    (m.serial && m.serial.toLowerCase() === lift.serial.toLowerCase())
+  );
+
+  if (already && already.qr) {
+    warn.textContent =
+      "Unit #" + already.unit + " is already in the register on tag " + already.qr + ".";
+    return;
+  }
+
+  // It is in the register with no tag, so this is a tagging rather than a new
+  // machine. Nothing more to do here — the sheet matches on the unit number
+  // when it arrives and writes the code onto the row that is already there,
+  // rather than making a second one.
+
+  warn.textContent = "";
+
+  const button = document.querySelector("[data-addlift]");
+  button.textContent = "Adding…";
+  button.disabled = true;
+
+  // Shrink the photo on the phone before it goes anywhere. A raw picture is
+  // several megabytes; this is a few hundred kilobytes and a serial plate is
+  // still perfectly readable.
+  const file = document.getElementById("inPhoto").files[0];
+  if (file) {
+    try {
+      lift.photo = await shrinkPhoto(file);
+    } catch (err) {
+      lift.photo = "";   // a photo is never worth losing the machine over
+    }
+  }
+
+  // On the phone first, so the machine exists even if the sheet is not
+  // reachable. Everything else follows from that.
+  const local = readLocalMachines();
+  local.push(lift);
+  localStorage.setItem(LOCAL_MACHINES, JSON.stringify(local));
+
+  // Show the machine straight away. It is registered the moment it is on the
+  // phone; getting it to the sheet is a separate job that happens behind the
+  // screen. Waiting on two round trips to Google before showing anything is
+  // several seconds of somebody standing at a lift wondering if it worked.
+  intakeCode = "";
+  justAdded  = lift;
+  go(null);              // back to the front screen, not into the new lift
+  updatePending();
+
+  sendLifts().then(fetchRegister);
+}
+
+
+// Draw the picture onto a canvas at a smaller size and read it back out as a
+// JPEG.
+//
+// This was 1600 across, chosen so a serial plate would still be readable.
+// There is no plate photo any more — this one is the whole machine, kept as
+// evidence of what it looked like on arrival, and 1000 shows that perfectly
+// well. It roughly halves what has to come back down a phone standing in a
+// hall with two bars, which is the only place any of this is ever felt.
+function shrinkPhoto(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const image = new Image();
+
+      image.onload = () => {
+        const max   = 1000;
+        const scale = Math.min(1, max / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width  = Math.round(image.width * scale);
+        canvas.height = Math.round(image.height * scale);
+        canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.72));
+      };
+
+      image.onerror = reject;
+      image.src = reader.result;
+    };
+
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+
+// Send any machines the sheet has not got yet. Same shape as sending scans:
+// the phone keeps them, the sheet confirms what it stored, and only then are
+// they marked off.
+async function sendLifts() {
+  if (!navigator.onLine) return;
+
+  const waiting = readLocalMachines().filter(m => !m.sent);
+  if (!waiting.length) return;
+
+  try {
+    const result = await postToSheet({ machines: waiting });
+    if (!result.ok) return;
+
+    const landed = {};
+    (result.saved || []).forEach(id => { landed[id] = true; });
+
+    // The sheet can refuse a lift now that it merges them onto rows that
+    // already exist — two rows with the same unit number, or a unit already
+    // wearing a different tag. Sending it again would get the same answer,
+    // so it stops and says why.
+    const why = {};
+    (result.refused || []).forEach(r => { why[r.id] = r.why; });
+
+    const local = readLocalMachines();
+    local.forEach(m => {
+      if (landed[m.id]) {
+        m.sent = true;
+        delete m.photo;   // the sheet has it now; no need to carry it around
+      }
+      if (why[m.id]) {
+        m.sent = true;
+        m.problem = why[m.id];
+        delete m.photo;
+      }
+    });
+    localStorage.setItem(LOCAL_MACHINES, JSON.stringify(local));
+
+  } catch (err) {
+    // No signal. It stays on the phone and goes with the next attempt.
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// THE MENU DRAWER
+// ---------------------------------------------------------------------------
+
+const drawer = document.getElementById("drawer");
+
+function toggleDrawer() {
+  if (drawer.hidden) openDrawer(); else closeDrawer();
+}
+
+function openDrawer() {
+  drawer.hidden = false;
+  sendAll();      // opening the menu is a fair moment to try the queue again
+}
+
+function closeDrawer() {
+  drawer.hidden = true;
+}
+
+
+// ---------------------------------------------------------------------------
+// SUPPORT
+//
+// Somebody telling us the app is wrong. It goes to Claire by email, because
+// a complaint sitting in a spreadsheet is a complaint nobody answers.
+// ---------------------------------------------------------------------------
+
+const SUPPORT_STORE = KEY + "support";
+
+function readSupport() {
+  try {
+    return JSON.parse(localStorage.getItem(SUPPORT_STORE)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function sendSupport() {
+  const warn = document.getElementById("supWarn");
+  const val  = id => document.getElementById(id).value.trim();
+
+  const note = {
+    id:      newId(),
+    name:    val("supName"),
+    message: val("supWhat"),
+    build:   APP_VERSION,          // which version they were looking at
+    at:      new Date().toISOString()
+  };
+
+  if (!note.message) {
+    warn.textContent = "Say what's wrong and we'll look at it.";
+    return;
+  }
+
+  warn.textContent = "";
+  if (note.name) localStorage.setItem(LAST_NAME, note.name);
+
+  const waiting = readSupport();
+  waiting.push(note);
+  localStorage.setItem(SUPPORT_STORE, JSON.stringify(waiting));
+
+  supportSent = note;
+  show(SUPPORT);
+  updatePending();
+
+  pushSupport();
+}
+
+
+async function pushSupport() {
+  if (!navigator.onLine) return;
+
+  const waiting = readSupport().filter(n => !n.sent);
+  if (!waiting.length) return;
+
+  try {
+    const result = await postToSheet({ support: waiting });
+    if (!result.ok) return;
+
+    const landed = {};
+    (result.saved || []).forEach(id => { landed[id] = true; });
+
+    const all = readSupport();
+    all.forEach(n => { if (landed[n.id]) n.sent = true; });
+    localStorage.setItem(SUPPORT_STORE, JSON.stringify(all));
+    updatePending();
+
+  } catch (err) {
+    // No signal. It waits, like everything else.
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// ASKING FOR EQUIPMENT
+//
+// Nothing to scan here — the machine being asked for is not on site yet. This
+// is a foreman telling the office what he needs, and it lands as an email
+// rather than sitting in a spreadsheet waiting to be noticed.
+// ---------------------------------------------------------------------------
+
+const REQUEST_STORE = KEY + "requests";
+
+function readRequests() {
+  try {
+    return JSON.parse(localStorage.getItem(REQUEST_STORE)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function sendRequest() {
+  const warn = document.getElementById("reqWarn");
+  const val  = id => document.getElementById(id).value.trim();
+
+  const ask = {
+    id:        newId(),
+    name:      val("reqName"),
+    job:       val("reqJob"),
+    equipment: val("reqWhat"),
+    vendor:    val("reqVendor"),
+    at:        new Date().toISOString()
+  };
+
+  if (!ask.name) {
+    warn.textContent = "Put your name in first.";
+    return;
+  }
+
+  if (!ask.equipment) {
+    warn.textContent = "Say what you need.";
+    return;
+  }
+
+  warn.textContent = "";
+  localStorage.setItem(LAST_NAME, ask.name);
+  localStorage.setItem(LAST_PROJ, ask.job);
+
+  const waiting = readRequests();
+  waiting.push(ask);
+  localStorage.setItem(REQUEST_STORE, JSON.stringify(waiting));
+
+  // Same order as everything else: on the phone first, sent behind the
+  // screen. A request made in a hall goes out when he walks into signal.
+  requestSent = ask;
+  show(REQUEST);
+  updatePending();
+
+  pushRequests();
+}
+
+
+async function pushRequests() {
+  if (!navigator.onLine) return;
+
+  const waiting = readRequests().filter(r => !r.sent);
+  if (!waiting.length) return;
+
+  try {
+    const result = await postToSheet({ requests: waiting });
+    if (!result.ok) return;
+
+    const landed = {};
+    (result.saved || []).forEach(id => { landed[id] = true; });
+
+    const all = readRequests();
+    all.forEach(r => { if (landed[r.id]) r.sent = true; });
+    localStorage.setItem(REQUEST_STORE, JSON.stringify(all));
+    updatePending();
+
+  } catch (err) {
+    // No signal. It waits.
+  }
+}
+
+
+function newId() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return "s-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
+}
+
+function timeOf(scan) {
+  return new Date(scan.at).toLocaleTimeString([], {
+    hour: "numeric", minute: "2-digit"
+  });
+}
+
+
+// Read which screen the address bar is asking for. Null means the front.
+function idFromAddress() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("support")) return SUPPORT;
+  if (params.get("menu")) return MENU;
+  if (params.get("pending")) return PENDING;
+  if (params.get("recent")) return RECENT;
+  if (params.get("request")) return REQUEST;
+  if (params.get("known")) return ALREADY;
+  if (params.get("claim")) return CLAIM;
+  if (params.get("new")) return INTAKE;
+  if (params.get("all")) return ALL_LIFTS;
+  return params.get("id");
+}
+
+// How a machine is addressed.
+//
+// Normally that is its tag. A lift with no tag on it yet still has to be
+// reachable — you can look it up, read it, and see that it is waiting for a
+// code — so it borrows its unit number instead, as U-147389. Nothing is
+// stored under that name; it exists only so a screen has something to be.
+function keyOf(machine) {
+  if (machine.qr) return machine.qr;
+
+  const unit = String(machine.unit || "").replace(/[^A-Za-z0-9]/g, "");
+  if (unit) return "U-" + unit.toUpperCase();
+
+  const serial = String(machine.serial || "").replace(/[^A-Za-z0-9]/g, "");
+  return serial ? "S-" + serial.toUpperCase() : "";
+}
+
+
+// Look through the list for a machine whose tag — or stand-in key — matches.
+// toUpperCase() so a lowercase a4x7 still works.
+function findMachine(code) {
+  const want = (code || "").toUpperCase();
+
+  // Nothing is not a machine. Without this an empty code matches the first
+  // lift in the register that has no tag, which is a quiet way to put one
+  // machine's record onto another.
+  if (!want) return undefined;
+
+  return register().find(m => m.qr === want || keyOf(m) === want);
+}
+
+
+// ---------------------------------------------------------------------------
+// THE REGISTER
+//
+// The built-in list plus anything tagged on this phone. Until the register
+// lives in the sheet, a lift added at intake has to be visible here straight
+// away — otherwise you tag a machine, scan it, and the app says it doesn't
+// exist, which is the one thing that would stop anyone trusting it.
+// ---------------------------------------------------------------------------
+
+const LOCAL_MACHINES = KEY + "machines";   // added on this phone
+const SHEET_MACHINES = KEY + "register";   // last copy of the sheet
+const REGISTER_AT    = KEY + "registerat"; // when that copy arrived
+const UNTAGGED_STORE = KEY + "untagged";   // register rows with no tag
+const CLAIM_STORE    = KEY + "claims";     // tags put on, not sent yet
+
+function readLocalMachines() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_MACHINES)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function readSheetMachines() {
+  try {
+    return JSON.parse(localStorage.getItem(SHEET_MACHINES)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+
+// The machines in the register that have no tag on them yet. They cannot be
+// opened — there is no code to open them by — so they are kept apart from the
+// register proper, and only the tagging screen ever looks at them.
+function readUntagged() {
+  try {
+    return JSON.parse(localStorage.getItem(UNTAGGED_STORE)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+
+// Tags this phone has put on machines, waiting to reach the sheet.
+function readClaims() {
+  try {
+    return JSON.parse(localStorage.getItem(CLAIM_STORE)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function writeClaims(list) {
+  localStorage.setItem(CLAIM_STORE, JSON.stringify(list));
+}
+
+// What the app believes exists.
+//
+// The sheet is the truth. The built-in list is only a stand-in for a phone
+// that has never managed to reach it — once a real register arrives, the
+// sample lifts disappear for good.
+//
+// Machines tagged on this phone are added on top until the sheet comes back
+// carrying them, which stops a lift from vanishing in the minutes between
+// registering it and the sheet catching up.
+// When this machine was last scanned, and by whom. Comes from the sheet, so
+// it is what the whole job has done, not just this phone.
+//
+// This is the line that tells a foreman whether a lift is genuinely finished
+// with before he calls it off.
+function lastScanText(machine) {
+  if (!machine.lastScan) return "Never scanned";
+
+  const when = new Date(machine.lastScan);
+  if (isNaN(when.getTime())) return "Never scanned";
+
+  const shown = when.toLocaleString([], {
+    weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit"
+  });
+
+  return machine.lastScanBy ? shown + " by " + machine.lastScanBy : shown;
+}
+
+
+// Is there a PO worth putting on the screen?
+//
+// The column is empty on a machine that turned up before anybody raised one,
+// and at least one row in the register carries a literal "0" — somebody's way
+// of writing "none", not a purchase order. "PO 0" on a screen is worse than
+// no PO at all, so both count as nothing here.
+function hasPO(machine) {
+  const po = String(machine.po || "").trim();
+  return po !== "" && po !== "0";
+}
+
+
+// A lift this phone is carrying that the sheet has never confirmed. Usually
+// it means no signal yet. Occasionally it means something went wrong on the
+// way, and then somebody needs to be able to throw it away.
+function onlyOnThisPhone(code) {
+  const mine    = readLocalMachines().some(m => m.qr === code);
+  const inSheet = readSheetMachines().some(m => m.qr === code);
+  return mine && !inSheet;
+}
+
+
+function register() {
+  const fromSheet = readSheetMachines();
+
+  const known = {};
+  fromSheet.forEach(m => { known[m.qr] = true; });
+
+  const mine = readLocalMachines().filter(m => !known[m.qr] && !m.problem);
+
+  // A machine the sheet already has, that this phone has just put a tag on.
+  //
+  // It is emphatically not a new machine and must never be sent as one — the
+  // sheet would end up with the same lift on two rows. It is carried here so
+  // that scanning the tag you have just stuck on works immediately, in a hall,
+  // with no signal, which is the only place anybody will ever do this.
+  //
+  // One the sheet refused stays out. The code is not really on that machine,
+  // and pretending otherwise is a lie the phone would be telling itself.
+  const claimed = readClaims()
+    .filter(c => c.machine && !c.problem && !known[c.machine.qr])
+    .map(c => c.machine);
+
+  // And the rows in the register that have no tag on them yet.
+  //
+  // They are real machines standing in a real building — the only thing they
+  // are missing is a bit of laminated paper. Keeping them out of this list
+  // was making the app answer "we have no lifts" about a hundred and thirty
+  // two lifts.
+  //
+  // One drops out the moment this phone has a tagged version of the same unit
+  // number, so a machine never appears twice while its tag is on its way to
+  // the sheet.
+  const carrying = {};
+  fromSheet.concat(mine).concat(claimed).forEach(m => {
+    if (m.unit) carrying[String(m.unit).toLowerCase()] = true;
+  });
+
+  const untagged = readUntagged()
+    .filter(m => !carrying[String(m.unit || "").toLowerCase()])
+    .map(m => Object.assign({}, m, { qr: "" }));
+
+  return fromSheet.concat(mine).concat(claimed).concat(untagged);
+}
+
+
+// Ask the sheet for the register. Quiet on failure — a phone with no signal
+// keeps the copy it already has, which is the whole point of keeping one.
+async function fetchRegister() {
+  if (!navigator.onLine) return;
+
+  try {
+    const response = await fetch(ENDPOINT + "?list=machines", { method: "GET" });
+    const result   = await response.json();
+
+    if (!result.ok || !Array.isArray(result.machines)) return;
+
+    localStorage.setItem(SHEET_MACHINES, JSON.stringify(result.machines));
+    localStorage.setItem(REGISTER_AT, new Date().toISOString());
+
+    // A machine this phone added is only held onto until the sheet has it.
+    //
+    // Two ways it stops being ours: the sheet is now carrying it, or the
+    // sheet took it and then the row was removed — which means somebody
+    // deleted it on purpose, and the phone should not keep resurrecting it.
+    const stillMine = readLocalMachines().filter(mine => {
+      const inSheet = result.machines.some(m => m.qr === mine.qr);
+      if (inSheet) return false;      // the sheet has it now
+      return !mine.sent;              // still on its way — keep holding it
+    });
+
+    localStorage.setItem(LOCAL_MACHINES, JSON.stringify(stillMine));
+
+    // A tag this phone put on is finished with the moment the sheet comes
+    // back carrying it. One the sheet refused is kept, because nobody has
+    // been told about it yet.
+    const openClaims = readClaims().filter(claim => {
+      const landed = result.machines.some(m => m.qr === claim.qr);
+      return !landed || claim.problem;
+    });
+    writeClaims(openClaims);
+
+    updatePending();
+
+  } catch (err) {
+    // No signal, or the sheet is unreachable. Keep what we have.
+  }
+}
+
+
+// The rows with no tag yet. Asked for separately from the register, and kept
+// on the phone for the same reason: the hall where somebody is stood holding
+// a blank tag is the one place with no signal.
+async function fetchUntagged() {
+  if (!navigator.onLine) return;
+
+  try {
+    const response = await fetch(ENDPOINT + "?list=untagged", { method: "GET" });
+    const result   = await response.json();
+
+    if (!result.ok || !Array.isArray(result.untagged)) return;
+
+    const before = localStorage.getItem(UNTAGGED_STORE) || "";
+    const after  = JSON.stringify(result.untagged);
+
+    localStorage.setItem(UNTAGGED_STORE, after);
+
+    // This list nearly always lands after the screen has been drawn, and
+    // until now nothing redrew it. So lifts pasted into the sheet a minute
+    // ago were not on ALL LIFTS until the app was opened a second time —
+    // which from the outside looks exactly like the paste not working.
+    //
+    // Only the rows are redrawn, not the whole screen, so anything already
+    // typed in the search box stays where it is.
+    if (after !== before && document.getElementById("lifts")) drawLifts();
+
+  } catch (err) {
+    // Keep the copy we have.
+  }
+}
+
+
+// What the job looks like right now, in one line above the buttons.
+//
+// A home screen that only offers you somewhere to go is a menu. This makes
+// opening the app worth something on its own — and the quiet count is the
+// number the whole system exists to move.
+function siteSummary() {
+  const lifts = register();
+  if (!lifts.length) return "";
+
+  // Only the tagged ones. A machine nobody can scan has not gone quiet, it
+  // has never been given a voice — counting those would put the whole yard
+  // in the warning and make the number worth nothing.
+  const tagged = lifts.filter(m => m.qr);
+  const quiet  = tagged.filter(m => daysQuiet(m) >= 7).length;
+
+  // And with nothing tagged, "all scanned this week" is simply untrue — not
+  // one of them can be scanned. Say what is actually holding the job up.
+  const state = !tagged.length
+    ? `&middot; <span class="quiet">none tagged yet</span>`
+    : quiet
+      ? `&middot; <span class="quiet">${quiet} not scanned in 7 days</span>`
+      : "&middot; all scanned this week";
+
+  return `
+    <p class="summary">
+      <strong>${lifts.length}</strong> ${lifts.length === 1 ? "lift" : "lifts"} on site
+      ${state}
+    </p>`;
+}
+
+
+// Days since anyone scanned this machine. A machine nobody has ever scanned
+// counts from the day it went on rent, so one delivered yesterday is not
+// accused of sitting idle.
+function daysQuiet(machine) {
+  const from = machine.lastScan || machine.onRent;
+  if (!from) return 0;
+
+  const when = new Date(from);
+  if (isNaN(when.getTime())) return 0;
+
+  return Math.floor((Date.now() - when.getTime()) / 86400000);
+}
+
+
+// When the register last came down, for the line under the search box.
+function registerAge() {
+  const when = localStorage.getItem(REGISTER_AT);
+  if (!when) return "never updated on this phone";
+
+  return "updated " + new Date(when).toLocaleString([], {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+  });
+}
+
+
+// ---------------------------------------------------------------------------
+// 3. PUT SOMETHING ON THE SCREEN
+//
+// show() runs on load, after a scan, and when the back button is used.
+// Three possible situations, handled in order.
+// ---------------------------------------------------------------------------
+
+const app = document.getElementById("app");
+
+function show(code) {
+  const machine = findMachine(code);
+
+  // The button in the navy band does one of two jobs. On the front screen it
+  // opens the menu; anywhere else it is the way back. Same place, same size,
+  // so the thumb learns one target.
+  const headbtn = document.getElementById("headbtn");
+
+  if (!code) {
+    headbtn.innerHTML = "&#9776;";
+    headbtn.setAttribute("data-menu", "");
+    headbtn.removeAttribute("data-back");
+    headbtn.setAttribute("aria-label", "Menu");
+  } else {
+    headbtn.innerHTML = "&#8592;";
+    headbtn.setAttribute("data-back", "");
+    headbtn.removeAttribute("data-menu");
+    headbtn.setAttribute("aria-label", "Back");
+  }
+
+  if (code === PENDING) {
+    // Everything this phone is still holding. Somewhere to look when the
+    // footer says something is waiting and you want to know what.
+    const scans    = readScans().filter(s => !s.sent);
+    const machines = readLocalMachines().filter(m => !m.sent);
+    const asks     = readRequests().filter(r => !r.sent);
+    const tags     = readClaims().filter(c => !c.sent);
+
+    // Anything the sheet turned away, whichever queue it came from. Kept
+    // rather than retried: the answer will not change on its own, and the
+    // person holding the phone is the only one who can fix it.
+    const stuck = readClaims()
+      .filter(c => c.problem)
+      .map(c => ({
+        what: "Tag " + c.qr + " on unit #" + c.unit,
+        why:  c.problem,
+        drop: `data-dropclaim="${c.id}"`
+      }))
+      .concat(readLocalMachines()
+        .filter(m => m.problem)
+        .map(m => ({
+          what: "New lift " + m.desc + " on tag " + m.qr,
+          why:  m.problem,
+          drop: `data-forget="${m.qr}"`
+        })));
+    const total    = scans.length + machines.length + asks.length + tags.length;
+
+    app.innerHTML = `
+      ${total ? `
+        <p class="lede">${total} ${total === 1 ? "thing" : "things"} on this
+        phone haven't reached the sheet yet. They go on their own when there's
+        signal — this is just so you can see what they are.</p>
+
+        <div class="scans">
+          ${machines.map(m => `
+            <div class="entry">
+              New lift &middot; ${m.desc}<br>
+              <span class="meta">Tag ${m.qr} &middot; Unit #${m.unit}
+              &middot; ${whenText(m.addedAt)}</span>
+            </div>`).join("")}
+
+          ${scans.map(s => {
+            const machine = findMachine(s.key || s.qr);
+            return `
+              <div class="entry">
+                Scan &middot; ${machine ? machine.desc : (s.desc || "Unit #" + s.unit)}<br>
+                <span class="meta">${s.name} &middot; ${s.place}
+                &middot; ${whenText(s.at)}</span>
+              </div>`;
+          }).join("")}
+
+          ${tags.map(c => `
+            <div class="entry">
+              New tag &middot; ${c.qr}<br>
+              <span class="meta">Unit #${c.unit} &middot; ${whenText(c.at)}</span>
+            </div>`).join("")}
+
+          ${asks.map(r => `
+            <div class="entry">
+              Equipment request &middot; ${r.equipment}<br>
+              <span class="meta">${r.job} &middot; ${r.name}
+              &middot; ${whenText(r.at)}</span>
+            </div>`).join("")}
+        </div>
+
+        <button class="btn navy" data-sendnow>Send now</button>`
+      : `<p class="lede">No pending uploads.</p>`}
+
+      ${stuck.length ? `
+        <div class="card missing">
+          <h1>${stuck.length === 1 ? "One that wouldn't stick" : "Ones that wouldn't stick"}</h1>
+          ${stuck.map(item => `
+            <p class="sub">${item.what}<br>${item.why}
+            <br><a href="#" ${item.drop}>Clear this</a></p>`).join("")}
+        </div>` : ""}`;
+
+  } else if (code === SUPPORT) {
+    const lastName = localStorage.getItem(LAST_NAME) || "";
+
+    app.innerHTML = `
+      ${supportSent ? `
+        <div class="card recorded">
+          <p class="who">Sent. Thanks.</p>
+          <p class="sub">${supportSent.message}</p>
+        </div>` : `
+        <div class="card form">
+          <label class="flabel" for="supName">Your name</label>
+          <input class="finput" id="supName" type="text" value="${lastName}"
+                 placeholder="First and last" autocomplete="off"
+                 autocapitalize="words" spellcheck="false">
+
+          <label class="flabel" for="supWhat">What's the problem?</label>
+          <textarea class="finput" id="supWhat" rows="5"
+                    placeholder="What you were doing and what happened"></textarea>
+
+          <p class="warn-text" id="supWarn"></p>
+          <button class="btn" data-sendsupport>Send</button>
+        </div>`}`;
+
+  } else if (code === MENU) {
+    app.innerHTML = `
+      <div class="list">
+        <a href="#" data-go-pending>
+          <span><span class="lbl">Pending Uploads</span><br>
+          <span class="sub">${pendingCount()} on this phone</span></span>
+        </a>
+        <a href="#" data-go-recent>
+          <span><span class="lbl">Recorded equipment</span><br>
+          <span class="sub">${readScans().length} scans</span></span>
+        </a>
+      </div>`;
+
+  } else if (code === RECENT) {
+    app.innerHTML = `
+      ${scanListBlock() || `<p class="lede">No scans recorded on this phone yet.</p>`}`;
+
+  } else if (code === REQUEST) {
+    // Asking for a machine that is not on site yet. Nothing to scan, because
+    // the thing being asked for does not exist here.
+    const lastName    = localStorage.getItem(LAST_NAME) || "";
+    const lastProject = localStorage.getItem(LAST_PROJ) || "";
+
+    app.innerHTML = `
+      ${requestSent ? `
+        <div class="card recorded">
+          <p class="who">Request sent</p>
+          <p class="sub">${requestSent.equipment}</p>
+          <p class="sub">${requestSent.job} &middot; ${requestSent.vendor}
+          &middot; ${requestSent.name}</p>
+        </div>` : `
+        <div class="card form">
+          <label class="flabel" for="reqName">Your name</label>
+          <input class="finput" id="reqName" type="text" value="${lastName}"
+                 placeholder="First and last" autocomplete="off"
+                 autocapitalize="words" spellcheck="false">
+
+          <label class="flabel" for="reqJob">Job #</label>
+          <select class="finput" id="reqJob">
+            ${PROJECTS.map(j => `
+              <option ${j === lastProject ? "selected" : ""}>${j}</option>
+            `).join("")}
+          </select>
+
+          <label class="flabel" for="reqWhat">What equipment do you need?</label>
+          <textarea class="finput" id="reqWhat" rows="3"
+                    placeholder="Size, type, and what it's for"></textarea>
+
+          <label class="flabel" for="reqVendor">Preferred vendor</label>
+          <select class="finput" id="reqVendor">
+            <option>No preference</option>
+            ${VENDORS.map(v => `<option>${v}</option>`).join("")}
+          </select>
+
+          <p class="warn-text" id="reqWarn"></p>
+          <button class="btn" data-sendrequest>Send request</button>
+        </div>`}`;
+
+  } else if (code === CLAIM) {
+    // A blank tag in one hand and a lift in front of you that the register
+    // already knows about. This screen does one thing: join the two.
+    app.innerHTML = `
+      <div class="card">
+        <div class="card-top">
+          <h1>Tag ${claimCode}</h1>
+          <div class="statusline">
+            <span class="pill calledoff">Not on a machine yet</span>
+          </div>
+        </div>
+        <p class="note">Find the lift you have just put this tag on. Type the
+        unit number off the vendor's sticker, or the serial number.</p>
+      </div>
+
+      <input class="find" id="claimfind" type="search" autocomplete="off"
+             placeholder="Search by unit or serial number" autocapitalize="characters">
+      <div id="claimlist"></div>`;
+
+    drawClaimList();
+
+  } else if (code === ALREADY) {
+    // Somebody tried to register a machine that is already in the register.
+    // Opening the use form instead would be quietly doing something other
+    // than what was asked for.
+    const known = findMachine(clashCode);
+
+    app.innerHTML = `
+      <div class="card errorcard">
+        <p class="errorhead">ERROR</p>
+        <h1>This lift is already registered</h1>
+        <p class="sub">Tag <strong>${clashCode}</strong>${known ? " &middot; " + known.desc : ""}
+        ${known ? "<br>Unit #" + known.unit : ""}</p>
+        <p class="sub">Go to SCAN A TAG to record equipment use.</p>
+      </div>
+
+      <button class="btn red" data-scan>SCAN A TAG</button>`;
+
+  } else if (code === INTAKE) {
+    // A machine that arrived on site. The tag has already been scanned, so
+    // we know its code — everything else has to be typed once, here, and
+    // never again.
+    const lastName = localStorage.getItem(LAST_NAME) || "";
+
+    app.innerHTML = `
+      <div class="card form">
+        <p class="taghead">NEW TAG <strong>${intakeCode}</strong></p>
+
+        <label class="flabel" for="inJob">Job #</label>
+        <select class="finput" id="inJob">
+          <option value="">Choose one</option>
+          ${PROJECTS.map(j => `<option>${j}</option>`).join("")}
+        </select>
+
+        <label class="flabel" for="inVendor">Vendor</label>
+        <select class="finput" id="inVendor">
+          <option value="">Choose one</option>
+          ${VENDORS.map(v => `<option>${v}</option>`).join("")}
+        </select>
+
+        <label class="flabel" for="inUnit">Unit #</label>
+        <input class="finput" id="inUnit" type="text" autocomplete="off"
+               autocapitalize="characters" spellcheck="false"
+               placeholder="The vendor's sticker number">
+
+        <label class="flabel" for="inSerial">Serial #</label>
+        <input class="finput" id="inSerial" type="text" autocomplete="off"
+               autocapitalize="characters" spellcheck="false"
+               placeholder="Stamped on the machine's plate">
+
+        <label class="flabel" for="inPo">PO # <span class="opt">optional</span></label>
+        <input class="finput" id="inPo" type="text" autocomplete="off"
+               autocapitalize="characters" spellcheck="false"
+               placeholder="Leave blank if you don't have it yet">
+
+        <label class="flabel" for="inDesc">Description</label>
+        <input class="finput" id="inDesc" type="text" autocomplete="off"
+               autocapitalize="characters" spellcheck="false"
+               placeholder="MANLIFT-25' SELF PROP ELECTRIC">
+
+        <label class="flabel" for="inDate">On-rent date</label>
+        <input class="finput" id="inDate" type="date" value="${today()}">
+
+        <label class="flabel" for="inPhoto">
+          Photo of the machine <span class="opt">optional</span>
+        </label>
+        <input class="finput" id="inPhoto" type="file"
+               accept="image/*" capture="environment">
+
+        <label class="flabel" for="inName">Your name</label>
+        <input class="finput" id="inName" type="text" value="${lastName}"
+               placeholder="First and last" autocomplete="off"
+               autocapitalize="words" spellcheck="false">
+
+        <p class="warn-text" id="inWarn"></p>
+        <button class="btn" data-addlift>Add to the register</button>
+      </div>`;
+
+  } else if (code === ALL_LIFTS) {
+    // Every lift on the job, searchable. This is the office's way in, and
+    // the way to reach a machine whose tag is damaged.
+    app.innerHTML = `
+      <select class="find" id="jobFilter">
+        <option value="">Sort by Job #</option>
+        <option value="ALL">All Jobs</option>
+        ${PROJECTS.map(j => `<option>${j}</option>`).join("")}
+      </select>
+      <input class="find" id="find" type="search" autocomplete="off"
+             placeholder="Search by unit or serial number" autocapitalize="characters">
+      <div id="lifts"></div>`;
+
+    drawLifts();
+
+  } else if (!code) {
+    // The way in. Four bars and nothing else to read.
+    //
+    // The confirmation shows once, on the way back from adding a machine,
+    // and is cleared as it is drawn so it does not greet you every time you
+    // come home afterwards.
+    const added = justAdded;
+    justAdded = null;
+
+    app.innerHTML = `
+      ${added ? `
+        <div class="card recorded">
+          <p class="who">Unit #: ${added.unit} successfully added to register!</p>
+        </div>` : ""}
+      ${siteSummary()}
+
+      <button class="btn red first" data-scan>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 9V5h4"/><path d="M20 9V5h-4"/>
+          <path d="M4 15v4h4"/><path d="M20 15v4h-4"/>
+          <path d="M4 12h16"/>
+        </svg>
+        SCAN A TAG
+      </button>
+
+      <button class="btn navy" data-all>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h11"/>
+        </svg>
+        ALL LIFTS
+      </button>
+
+      <button class="btn navy" data-intake>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="4" y="4" width="16" height="16" rx="3"/>
+          <path d="M12 9v6"/><path d="M9 12h6"/>
+        </svg>
+        ADD EQUIPMENT
+      </button>
+
+      <button class="btn navy" data-request>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 4h10l3 3v13H7z"/><path d="M17 4v3h3"/>
+          <path d="M10 12h6"/><path d="M10 16h4"/>
+        </svg>
+        SUBMIT EQUIPMENT REQUEST
+      </button>`;
+
+  } else if (!machine) {
+    // A code came back but it isn't one we know.
+    app.innerHTML = `
+      <div class="card missing">
+        <h1>Machine not found</h1>
+        <p>Tag <strong>${code}</strong> isn't on any machine yet.</p>
+      </div>
+
+      <button class="btn navy" data-claim="${code}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 12h7"/><path d="M15 12h5"/><path d="M11 8l4 4-4 4"/>
+        </svg>
+        PUT IT ON A LIFT WE ALREADY HAVE
+      </button>
+
+      <button class="btn navy" data-newlift="${code}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="4" y="4" width="16" height="16" rx="3"/>
+          <path d="M12 9v6"/><path d="M9 12h6"/>
+        </svg>
+        ADD EQUIPMENT NEW TO SITE
+      </button>
+
+      <button class="btn secondary" data-scan>Scan another tag</button>`;
+
+  } else {
+    // Found it. Show the machine.
+    app.innerHTML = `
+      <div class="card">
+        <div class="card-top">
+          <h1>${machine.desc}</h1>
+          <div class="statusline">
+            <span class="pill ${statusOf(machine)}">${STATUS_LABEL[statusOf(machine)]}</span>
+            ${machine.qr ? "" : `<span class="pill calledoff">No tag yet</span>`}
+            ${hasPO(machine) ? `<span class="po">PO ${machine.po}</span>` : ""}
+          </div>
+        </div>
+        ${photoBlock(machine)}
+        <dl>
+          <div class="row">
+            <span class="k">Vendor:</span>
+            <span class="v">${machine.vendor}</span>
+          </div>
+          <div class="row job">
+            <span class="k">Job #:</span>
+            <span class="v">${machine.job}</span>
+            <span class="hint">The job this lift is rented to</span>
+          </div>
+          <div class="row unit">
+            <span class="k">Unit #:</span>
+            <span class="v mono">${machine.unit}</span>
+            <span class="hint">The vendor's sticker number</span>
+          </div>
+          <div class="row serial">
+            <span class="k">Serial #:</span>
+            <span class="v mono">${machine.serial}</span>
+            <span class="hint">Stamped on the machine's plate</span>
+          </div>
+          <div class="row">
+            <span class="k">Last scanned:</span>
+            <span class="v">${lastScanText(machine)}</span>
+          </div>
+        </dl>
+      </div>
+      ${useBlock(machine)}
+      <button class="btn secondary" data-scan>Scan another tag</button>
+      ${onlyOnThisPhone(machine.qr) ? `
+        <p class="note">
+          This lift is on this phone only — it hasn't reached the sheet yet.
+          <br><a href="#" data-forget="${machine.qr}">Remove it from this phone</a>
+        </p>` : ""}`;
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// THE PHOTO
+//
+// Taken at intake and filed in Drive by the Apps Script, which leaves the
+// file link-shared. The app points an <img> straight at Drive's thumbnail
+// service and Drive resizes it on their side.
+//
+// This went the long way round first — the Apps Script read the file and
+// handed back base64, on the assumption that a Drive address would demand a
+// Google sign-in. It does not. It is the /view PAGE that asks people to sign
+// in; the image itself is served to anyone with the link. Measuring settled
+// it: half a second and 195KB this way, three seconds and 479KB the other.
+//
+// So there is no fetch here, and nothing of ours between the browser and the
+// picture. Drive sends Cache-Control: max-age=86400, which means the phone
+// reuses it for a day without asking anyone — including, for that day, with
+// no signal at all.
+// ---------------------------------------------------------------------------
+
+function photoBlock(machine) {
+  if (!machine.photo) return "";
+
+  const id = encodeURIComponent(machine.photo);
+
+  // Straight to lh3, which is the shelf Drive actually keeps the picture on.
+  // The tidier drive.google.com/thumbnail address only bounces you here — and
+  // that bounce costs a phone a second name lookup and a second handshake
+  // with a host it has never met, before any of the photo arrives.
+  //
+  // w600 rather than w1000. The band is 200 tall and the picture is fitted
+  // inside it, so a portrait photo is only ever drawn about 150 across — 600
+  // is already generous on the densest screen, and it halves what has to come
+  // down a phone standing in a hall with two bars.
+  return `
+    <figure class="photo" id="photo">
+      <img src="https://lh3.googleusercontent.com/d/${id}=w600"
+           data-id="${id}"
+           fetchpriority="high" decoding="async"
+           onerror="photoFailed(this)"
+           alt="This machine, photographed when it arrived on site">
+    </figure>`;
+}
+
+
+// The picture did not arrive.
+//
+// First failure gets one more try, at the front door. lh3 answers fastest but
+// it is not the address Google documents anywhere; drive.google.com/thumbnail
+// is. If the short way ever stops working, the long way still does, and
+// nobody has to wait for us to notice. There is no point retrying with no
+// signal, so that case goes straight to the message.
+//
+// Everything ends as a line of grey text. A missing photo is not an error,
+// and nothing else on the screen knows or cares that this happened.
+function photoFailed(image) {
+  const frame = image.parentNode;
+  if (!frame) return;
+
+  if (!image.dataset.retried && navigator.onLine) {
+    image.dataset.retried = "1";
+    image.src = "https://drive.google.com/thumbnail?id=" +
+                image.dataset.id + "&sz=w600";
+    return;
+  }
+
+  frame.innerHTML = navigator.onLine
+    ? `<div class="photo-wait">Photo didn't load</div>`
+    : `<div class="photo-wait">Photo needs signal</div>`;
+}
+
+
+// The entry just submitted, so the screen can confirm it. Cleared as soon as
+// you go anywhere, including scanning the next machine.
+let justSaved = null;
+
+// Either the form, or a receipt for what was just submitted.
+function useBlock(machine) {
+  const lastName  = localStorage.getItem(LAST_NAME) || "";
+  const lastPlace = localStorage.getItem(LAST_PLACE) || "";
+  const lastProject = localStorage.getItem(LAST_PROJ) || "";
+
+  if (justSaved && justSaved.key === keyOf(machine)) {
+    const faulty = justSaved.condition !== "Good";
+
+    return `
+      <div class="card recorded ${faulty ? "flagged" : ""}">
+        <p class="who">Logged at ${timeOf(justSaved)} &middot; ${justSaved.name}</p>
+        <p class="sub">${justSaved.project} &middot; ${justSaved.place} &middot; ${justSaved.condition}
+        ${justSaved.note ? "&mdash; " + justSaved.note : ""}</p>
+      </div>
+      ${justSaved.callOff ? `
+        <div class="instruct">
+          Take it to the south loading dock so the logistics team can get it
+          out of the building and ready for pick up.
+        </div>` : ""}`;
+      // Deliberately nothing else. Logging the same lift again happens by
+      // scanning it again, not by the app asking.
+  }
+
+  // Condition starts at Good every time. Yesterday's fault is not today's
+  // answer, and a pre-filled "Needs Service" gets submitted by accident.
+  const condNow = "Good";
+  const noteNow = "";
+
+  return `
+    <div class="card form">
+      <label class="flabel" for="who">Your name</label>
+      <input class="finput" id="who" type="text" value="${lastName}"
+             placeholder="First and last" autocomplete="off"
+             autocapitalize="words" spellcheck="false">
+      <p class="warn-text" id="nameWarn"></p>
+
+      <!-- Which job is USING it, which is not always the job it is rented to.
+           That gap is the whole reason this field exists. -->
+      <label class="flabel" for="project">Project</label>
+      <select class="finput" id="project">
+        ${PROJECTS.map(p => `
+          <option ${p === lastProject ? "selected" : ""}>${p}</option>
+        `).join("")}
+      </select>
+
+      <label class="flabel" for="where">Location</label>
+      <select class="finput" id="where">
+        ${locationOptions(lastPlace)}
+      </select>
+
+      <label class="flabel" for="condition">Condition</label>
+      <select class="finput" id="condition">
+        ${CONDITIONS.map(c => `
+          <option ${c === condNow ? "selected" : ""}>${c}</option>
+        `).join("")}
+      </select>
+
+      <!-- Only shown when the condition calls for it. Asking everyone what is
+           wrong with a machine that is fine is how a ten second job becomes a
+           thirty second one. -->
+      <div id="faultWrap" ${condNow === NEEDS_DETAIL ? "" : "hidden"}>
+        <label class="flabel" for="fault">What's wrong with it?</label>
+        <textarea class="finput" id="fault" rows="3"
+                  placeholder="Enough that someone could bring the right part">${noteNow}</textarea>
+        <p class="warn-text" id="faultWarn"></p>
+      </div>
+
+      <!-- The operator telling us he is done with it. Worth more than the
+           seven day idle rule, because it is same day and it is from the
+           person who actually knows. -->
+      <label class="flabel" for="calloff">Request Call-Off?</label>
+      <select class="finput" id="calloff">
+        <option>No</option>
+        <option>Yes</option>
+      </select>
+
+      <div class="instruct" id="calloffNote" hidden>
+        Take it to the south loading dock so the logistics team can get it out
+        of the building and ready for pick up.
+      </div>
+
+      <button class="btn" data-record="${keyOf(machine)}">Submit</button>
+    </div>`;
+}
+
+
+// What this phone has recorded. Scaffolding — it is how you check the thing
+// works while there is still no server to look at.
+function scanListBlock() {
+  const list = readScans().slice().reverse();
+  if (!list.length) return "";
+
+  return `
+    <div class="scans">
+      <h2>Recorded on this phone &middot; ${list.length}</h2>
+      ${list.slice(0, 12).map(s => {
+        const machine = findMachine(s.qr);
+        const faulty  = s.condition && s.condition !== "Good";
+        return `
+          <div class="entry">
+            ${machine ? machine.desc : s.qr}<br>
+            <span class="meta">${s.name} &middot; ${s.place} &middot;
+            ${s.day} ${timeOf(s)}</span>
+            ${faulty ? `<br><span class="flag">${s.condition}${s.note ? " — " + s.note : ""}</span>` : ""}
+            ${s.callOff ? `<br><span class="flag">Call off requested</span>` : ""}
+            ${s.sent ? "" : `<br><span class="meta">waiting to send</span>`}
+          </div>`;
+      }).join("")}
+      <p class="note">
+        Nothing is sent anywhere yet — this is on this phone only.
+        <br><a href="#" data-clear>Clear these while testing</a>
+      </p>
+    </div>`;
+}
+
+// Change which machine is on screen without reloading the page. The address
+// bar is updated to match, so the back button behaves and the address can be
+// shared — but nothing is fetched, which is what keeps this working offline.
+// Names for the screens that are not a machine. Not machine codes, so they
+// can travel through the same routing as one.
+const ALL_LIFTS = "__all__";
+const INTAKE    = "__intake__";
+const ALREADY   = "__already__";
+const CLAIM     = "__claim__";
+const REQUEST   = "__request__";
+const MENU      = "__menu__";
+const PENDING   = "__pending__";
+const RECENT    = "__recent__";
+const SUPPORT   = "__support__";
+
+// The tag being registered, set by the scan that starts intake.
+let intakeCode = "";
+
+// A tag someone tried to register that is already in the register.
+let clashCode = "";
+
+// A blank tag being put on a lift the register already knows about.
+let claimCode = "";
+
+// The equipment request just sent, so the screen can confirm it.
+let requestSent = null;
+
+// The machine just added, so the front screen can confirm it.
+let justAdded = null;
+
+// The support note just sent, so that screen can confirm it.
+let supportSent = null;
+
+// The vendors on this job. Same list as the register uses, so a machine
+// added at intake matches the ones already in it.
+const VENDORS = [
+  "Opifex", "Texas First", "United Rentals", "Sunstate", "Equipment Share"
+];
+
+// How many screens deep into the app we are, so Back knows whether there is
+// anywhere to go back to.
+let depth = 0;
+
+function go(code) {
+  justSaved = null;     // a receipt belongs to the screen it was shown on
+  requestSent = null;
+  depth++;
+
+  // Moving between screens is a fair moment to try the queue again — most
+  // of all coming back to the front screen, which is where somebody looks
+  // to see whether their scan went.
+  if (!code || code === MENU || code === PENDING) sendAll();
+
+  const address = code === SUPPORT  ? "?support=1"
+                : code === MENU     ? "?menu=1"
+                : code === PENDING  ? "?pending=1"
+                : code === RECENT   ? "?recent=1"
+                : code === REQUEST  ? "?request=1"
+                : code === ALREADY  ? "?known=1"
+                : code === CLAIM    ? "?claim=1"
+                : code === INTAKE   ? "?new=1"
+                : code === ALL_LIFTS ? "?all=1"
+                : code               ? "?id=" + code
+                :                      "./";
+
+  history.pushState({}, "", address);
+  show(code);
+}
+
+// Back out of a screen. Uses the phone's own back where there is history to
+// use — so a lift opened from the list returns to the list, with the search
+// still in it — and falls back to the front screen when the app was opened
+// straight onto a machine by scanning its tag.
+function goBack() {
+  if (depth > 0) {
+    depth--;
+    history.back();
+  } else {
+    history.replaceState({}, "", "./");
+    show(null);
+  }
+}
+
+
+// The rows on the tagging screen. Only ever machines with no tag on them, so
+// a lift cannot be given a second code by accident.
+function drawClaimList() {
+  const box = document.getElementById("claimlist");
+  if (!box) return;
+
+  const needle  = (document.getElementById("claimfind").value || "").trim().toLowerCase();
+  const waiting = readUntagged();
+
+  if (!waiting.length) {
+    box.innerHTML = `
+      <p class="lede">This phone hasn't got the list of untagged machines yet.
+      It comes down with the register the next time there's signal.</p>`;
+    return;
+  }
+
+  // Nothing typed shows nothing, same as the all-lifts screen. You are stood
+  // at a machine with its number in front of you — a list of everything is
+  // not an answer to that, it is a way to pick the wrong one.
+  if (!needle) {
+    box.innerHTML = `
+      <p class="lede">${waiting.length} ${waiting.length === 1 ? "machine has" : "machines have"}
+      no tag yet. Type a unit or serial number to find yours.</p>`;
+    return;
+  }
+
+  const found = waiting.filter(m =>
+    (m.unit || "").toLowerCase().includes(needle) ||
+    (m.serial || "").toLowerCase().includes(needle) ||
+    (m.desc || "").toLowerCase().includes(needle));
+
+  box.innerHTML = found.length ? `
+    <div class="list">
+      ${found.map(m => `
+        <a href="#" data-pick="${m.unit}||${m.serial}">
+          <span>
+            <span class="lbl">${m.desc}</span><br>
+            <span class="sub">Vendor: ${m.vendor}<br>Unit #${m.unit}<br>Serial #${m.serial}</span>
+          </span>
+        </a>
+      `).join("")}
+    </div>`
+  : `<p class="lede">Nothing matches. If this lift has never been in the
+     register at all, go back and use ADD EQUIPMENT instead.</p>`;
+}
+
+
+// Join the tag to the machine.
+//
+// Written to the phone first and sent second, exactly like a scan. The tag is
+// on the machine the moment somebody presses OK — whether the sheet has heard
+// about it is a separate problem that solves itself on the walk out.
+// The row is picked out by unit and serial together, not by one of them.
+// Plenty of machines arrive with a unit number and no serial yet, and
+// "the one with no serial" matches the first of however many there are.
+function attachTag(key) {
+  const unit   = (key || "").split("||")[0];
+  const serial = (key || "").split("||")[1];
+
+  const lift = readUntagged().find(m => m.unit === unit && m.serial === serial);
+  if (!lift) return;
+
+  const sure = confirm(
+    "Put tag " + claimCode + " on unit #" + lift.unit + "?\n\n" + lift.desc);
+  if (!sure) return;
+
+  const claim = {
+    id:     newId(),
+    qr:     claimCode,
+    serial: lift.serial,
+    unit:   lift.unit,
+    by:     localStorage.getItem(LAST_NAME) || "",
+    at:     new Date().toISOString(),
+
+    // The machine as this phone will show it until the sheet catches up.
+    machine: Object.assign({}, lift, { qr: claimCode })
+  };
+
+  const claims = readClaims();
+  claims.push(claim);
+  writeClaims(claims);
+
+  // Out of the untagged list, so the next person searching on this phone
+  // cannot put a second tag on the same lift.
+  localStorage.setItem(UNTAGGED_STORE,
+    JSON.stringify(readUntagged().filter(m =>
+      !(m.unit === unit && m.serial === serial))));
+
+  updatePending();
+  sendAll();
+
+  // Straight to the machine's own screen — which now exists on this phone,
+  // under its new code.
+  go(claimCode);
+}
+
+
+// The rows on the all-lifts screen. Drawn separately from the screen itself
+// so typing in the search box redraws the list without touching the box —
+// otherwise the keyboard closes on every letter.
+function drawLifts() {
+  const needle = (document.getElementById("find").value || "").trim().toLowerCase();
+  const job    = document.getElementById("jobFilter").value;
+
+  // Nothing chosen and nothing typed: show nothing. A hundred and forty lifts
+  // in one list is not a starting point, it is a wall.
+  if (!job && !needle) {
+    document.getElementById("lifts").innerHTML = `
+      <p class="lede">Choose a job to see its lifts, or search for a unit or
+      serial number.</p>`;
+    return;
+  }
+
+  const all   = register();
+  const found = all.filter(m => {
+    if (job && job !== "ALL" && m.job !== job) return false;
+
+    return !needle ||
+      m.unit.toLowerCase().includes(needle) ||
+      (m.serial || "").toLowerCase().includes(needle) ||
+      m.desc.toLowerCase().includes(needle) ||
+      m.job.toLowerCase().includes(needle);
+  });
+
+  document.getElementById("lifts").innerHTML = `
+    <p class="count">${found.length} ${found.length === 1 ? "lift" : "lifts"}
+    &middot; ${registerAge()}</p>
+    ${all.length ? "" : `<p class="lede">The register is empty. Add machines in the
+      Machines tab of the sheet, or tag one with ADD EQUIPMENT.</p>`}
+    <div class="list">
+      ${found.map(m => `
+        <a href="?id=${keyOf(m)}" data-go="${keyOf(m)}">
+          <span>
+            <span class="lbl">${m.desc}</span><br>
+            <span class="sub">Vendor: ${m.vendor}<br>Unit #${m.unit}<br>Job #: ${m.job}${m.qr ? "" : "<br>No tag on it yet"}${onlyOnThisPhone(m.qr) ? "<br>On this phone only" : ""}</span>
+          </span>
+        </a>
+      `).join("")}
+    </div>
+    ${found.length ? "" : `<p class="lede">Nothing matches.</p>`}`;
+}
+
+// Draw whatever the address bar says, now and whenever the back button moves.
+show(idFromAddress());
+window.addEventListener("popstate", () => show(idFromAddress()));
+
+
+// ---------------------------------------------------------------------------
+// 4. THE SCANNER
+//
+// The phone's own camera app can read these tags, but it hands the address to
+// the browser, which then needs a signal. Reading the code inside the app
+// keeps the whole thing on the phone.
+//
+// How it works: run the camera into a hidden video element, copy one frame at
+// a time onto a hidden canvas, and hand that picture to jsQR to ask "is there
+// a code in here?" About thirty times a second, until the answer is yes.
+// ---------------------------------------------------------------------------
+
+const scanner = document.getElementById("scanner");
+const video   = document.getElementById("video");
+const scanmsg = document.getElementById("scanmsg");
+
+// Never added to the page — it exists only as somewhere to put a frame so the
+// pixels can be read back out.
+const canvas = document.createElement("canvas");
+const ctx    = canvas.getContext("2d", { willReadFrequently: true });
+
+let stream  = null;    // the live camera feed, kept between scans
+let looking = false;   // true while the decode loop should keep running
+let scanFor = "open";  // "open" a known machine, or "intake" a new one
+let handBack = null;   // countdown to giving the camera back
+
+// Because the camera is kept between scans, the video element still holds the
+// last frame it saw — which is the frame with a code in it, since that is what
+// ended the scan. Without this the next scan reads that stale picture and
+// jumps to the same machine with the phone pointed at the floor.
+let freshFrom = -1;
+
+// Belt and braces: ignore the same code twice in quick succession.
+let lastCode = null;
+let lastCodeAt = 0;
+
+// How long to keep hold of the camera after the scanner is closed. Long
+// enough to cover walking to the next machine, short enough that the phone
+// is not sitting there with the camera on all afternoon.
+const HOLD_CAMERA_FOR = 2 * 60 * 1000;
+
+async function startScan() {
+  scanner.hidden = false;
+  clearTimeout(handBack);
+
+  // Asking for the camera is what makes the phone put up its permission
+  // prompt. Somebody scanning six machines should be asked once, not six
+  // times — so if we still have the camera from the last scan, reuse it.
+  if (!stream || !stream.active) {
+    scanmsg.textContent = "Starting the camera…";
+
+    try {
+      // "environment" is the back camera. ideal rather than exact, so a device
+      // with only one camera gives us that one instead of refusing.
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } }
+      });
+    } catch (err) {
+      scanmsg.textContent =
+        "No camera access. Allow the camera for this app in your phone settings, then try again.";
+      return;
+    }
+
+    video.srcObject = stream;
+  }
+
+  await video.play();
+
+  // Anything the video is already holding is from last time. Only frames
+  // after this moment count.
+  freshFrom = video.currentTime;
+
+  scanmsg.textContent = "Point the camera at the tag";
+  looking = true;
+  requestAnimationFrame(look);
+}
+
+// Close the overlay and stop reading frames, but keep the camera itself for
+// a couple of minutes in case the next machine is right there.
+function closeScanner() {
+  looking = false;
+  scanner.hidden = true;
+  video.pause();
+
+  clearTimeout(handBack);
+  handBack = setTimeout(releaseCamera, HOLD_CAMERA_FOR);
+}
+
+// Actually give the camera back. Until this runs the phone shows its camera
+// indicator and burns battery, so it needs to happen on its own — nobody is
+// going to remember to close anything.
+function releaseCamera() {
+  clearTimeout(handBack);
+
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+  video.srcObject = null;
+}
+
+// Leaving the app hands the camera back immediately. Holding it while the
+// phone is in someone's pocket would be indefensible.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") releaseCamera();
+});
+
+function look() {
+  if (!looking) return;
+
+  // Wait until the camera is actually producing frames, and until those
+  // frames are newer than the moment this scan started.
+  if (video.readyState === video.HAVE_ENOUGH_DATA && video.currentTime > freshFrom) {
+
+    // Shrink the frame on the way in. A full resolution phone picture is
+    // millions of pixels and this runs thirty times a second; a code big
+    // enough for a person to aim at is still readable at this size.
+    const width  = 480;
+    const height = Math.round(video.videoHeight * (width / video.videoWidth));
+    canvas.width  = width;
+    canvas.height = height;
+    ctx.drawImage(video, 0, 0, width, height);
+
+    const picture = ctx.getImageData(0, 0, width, height);
+    const found = jsQR(picture.data, picture.width, picture.height, {
+      inversionAttempts: "dontInvert"
+    });
+
+    if (found) {
+      const code = codeFromScan(found.data);
+      const now  = Date.now();
+
+      // The same tag a second after the last one is the camera catching a tag
+      // still sitting in front of it, not a person scanning again.
+      const echo = code && code === lastCode && now - lastCodeAt < 1500;
+
+      if (code && !echo) {
+        lastCode   = code;
+        lastCodeAt = now;
+        closeScanner();
+
+        // Tagging a machine that has just arrived, rather than opening one
+        // that is already in the register.
+        if (scanFor === "intake") {
+          scanFor = "open";
+
+          if (findMachine(code)) {
+            // Already registered. Say so — do not quietly open the use form
+            // instead, which is not what was asked for.
+            clashCode = code.toUpperCase();
+            go(ALREADY);
+          } else {
+            intakeCode = code.toUpperCase();
+            go(INTAKE);
+          }
+          return;
+        }
+
+        go(code);
+        return;
+      }
+      // Something scanned, but not one of ours. Keep looking.
+      scanmsg.textContent = "That isn't a Lift Register tag.";
+    }
+  }
+
+  requestAnimationFrame(look);
+}
+
+// A tag holds a web address ending in ?id=A4X7. A hand-made test tag might
+// hold just the four characters. Accept either and reject anything else — a
+// shipping label or a vendor's own QR should not open a machine.
+function codeFromScan(text) {
+  try {
+    const address = new URL(text, window.location.href);
+    const id = address.searchParams.get("id");
+    if (id) return id.toUpperCase();
+  } catch (err) {
+    // Not a web address. Fall through and try it as a bare code.
+  }
+
+  const bare = text.trim().toUpperCase();
+  return /^[A-Z0-9]{4}$/.test(bare) ? bare : null;
+}
+
+
+// Any Scan button, anywhere on the page. Written this way because the buttons
+// are created and destroyed every time the screen redraws, so we listen on
+// the page itself rather than on a button that might not exist yet.
+document.addEventListener("click", event => {
+  if (event.target.closest("[data-scan]")) startScan();
+
+  if (event.target.closest("[data-all]")) {
+    event.preventDefault();
+    go(ALL_LIFTS);
+  }
+
+  // Adding a machine starts the same way using it does — by scanning its
+  // tag. The difference is what happens with the code afterwards.
+  if (event.target.closest("[data-intake]")) {
+    event.preventDefault();
+    scanFor = "intake";
+    startScan();
+  }
+
+  if (event.target.closest("[data-addlift]")) {
+    event.preventDefault();
+    addLift();
+  }
+
+  // The hamburger opens the menu and closes it again — nobody should have to
+  // hunt for a back arrow to undo a tap on the same button.
+  if (event.target.closest("[data-menu]")) {
+    event.preventDefault();
+    toggleDrawer();
+  }
+
+  if (event.target.closest("[data-closedrawer]")) {
+    event.preventDefault();
+    closeDrawer();
+  }
+
+  if (event.target.closest("[data-go-pending]")) {
+    event.preventDefault();
+    closeDrawer();
+    go(PENDING);
+  }
+
+  if (event.target.closest("[data-go-recent]")) {
+    event.preventDefault();
+    closeDrawer();
+    go(RECENT);
+  }
+
+  if (event.target.closest("[data-go-support]")) {
+    event.preventDefault();
+    closeDrawer();
+    go(SUPPORT);
+  }
+
+  if (event.target.closest("[data-sendsupport]")) {
+    event.preventDefault();
+    sendSupport();
+  }
+
+  if (event.target.closest("[data-sendnow]")) {
+    event.preventDefault();
+    const button = event.target.closest("[data-sendnow]");
+    button.textContent = "Sending…";
+    button.disabled = true;
+    sendAll().then(() => show(PENDING));
+  }
+
+  if (event.target.closest("[data-request]")) {
+    event.preventDefault();
+    go(REQUEST);
+  }
+
+  // Throw away a machine this phone is carrying that never made it. Asked
+  // about first, because on a phone in a hall this could be a real lift
+  // somebody registered an hour ago.
+  const forget = event.target.closest("[data-forget]");
+  if (forget) {
+    event.preventDefault();
+    const code = forget.getAttribute("data-forget");
+
+    if (!confirm("Remove " + code + " from this phone? It has not reached the sheet, so it will be gone.")) return;
+
+    const kept = readLocalMachines().filter(m => m.qr !== code);
+    localStorage.setItem(LOCAL_MACHINES, JSON.stringify(kept));
+    updatePending();
+    go(ALL_LIFTS);
+  }
+
+  // Intake, from the screen that has just told you the tag is on nothing.
+  // The code came off the tag a moment ago; scanning it a second time to get
+  // to the same place is the app not paying attention.
+  const fresh = event.target.closest("[data-newlift]");
+  if (fresh) {
+    event.preventDefault();
+    intakeCode = (fresh.getAttribute("data-newlift") || "").toUpperCase();
+    go(INTAKE);
+  }
+
+  // A blank tag, going onto a lift the register already has.
+  const claim = event.target.closest("[data-claim]");
+  if (claim) {
+    event.preventDefault();
+    claimCode = (claim.getAttribute("data-claim") || "").toUpperCase();
+    go(CLAIM);
+  }
+
+  // Which lift it is going on.
+  const pick = event.target.closest("[data-pick]");
+  if (pick) {
+    event.preventDefault();
+    attachTag(pick.getAttribute("data-pick"));
+  }
+
+  // A tag the sheet would not accept. Clearing it only forgets the attempt —
+  // the tag is still on the machine, so it will need doing again once the
+  // reason has been sorted out in the sheet.
+  const drop = event.target.closest("[data-dropclaim]");
+  if (drop) {
+    event.preventDefault();
+    const gone = drop.getAttribute("data-dropclaim");
+    writeClaims(readClaims().filter(c => c.id !== gone));
+    updatePending();
+    show(PENDING);
+  }
+
+  if (event.target.closest("[data-sendrequest]")) {
+    event.preventDefault();
+    sendRequest();
+  }
+
+  // A row in the all-lifts list. Handled here rather than letting the link
+  // load a page, so it's instant and works with no signal.
+  const row = event.target.closest("[data-go]");
+  if (row) {
+    event.preventDefault();
+    go(row.getAttribute("data-go"));
+  }
+
+  if (event.target.closest("[data-back]")) {
+    event.preventDefault();
+    goBack();
+  }
+
+  const record = event.target.closest("[data-record]");
+  if (record) recordScan(record.getAttribute("data-record"));
+
+
+  // Testing only. Goes away once scans are being sent somewhere.
+  if (event.target.closest("[data-clear]")) {
+    localStorage.removeItem(SCAN_STORE);
+    show(idFromAddress());
+  }
+});
+
+// Typing in the search box on the all-lifts screen.
+document.addEventListener("input", event => {
+  if (event.target.id === "find") drawLifts();
+  if (event.target.id === "claimfind") drawClaimList();
+});
+
+document.addEventListener("change", event => {
+  // The fault box only exists when the condition calls for it.
+  if (event.target.id === "condition") {
+    const wrap = document.getElementById("faultWrap");
+    wrap.hidden = event.target.value !== NEEDS_DETAIL;
+    if (!wrap.hidden) document.getElementById("fault").focus();
+  }
+
+  // Asking for a call off comes with somewhere to put the machine.
+  if (event.target.id === "jobFilter") drawLifts();
+
+  if (event.target.id === "calloff") {
+    document.getElementById("calloffNote").hidden = event.target.value !== "Yes";
+  }
+});
+
+document.getElementById("cancel").addEventListener("click", closeScanner);
+
+document.getElementById("version").textContent =
+  APP_VERSION + (IS_TEST ? " 00b7 TEST" : "");
+
+
+// ---------------------------------------------------------------------------
+// 6. SENDING SCANS TO THE SHEET
+//
+// A scan is written to the phone first and sent second, always. That order is
+// what makes a hall with no signal work: the record exists the moment Submit
+// is pressed, and getting it to the sheet is a separate problem that solves
+// itself later.
+//
+// Nothing is ever deleted from the phone on a failure. The worst case is a
+// scan sitting in the queue until the operator walks out to signal.
+// ---------------------------------------------------------------------------
+
+let sending = false;
+
+// A request that never comes back — a phone dozing off mid-send, a bar of
+// signal that disappears — used to leave `sending` stuck on, and every later
+// attempt refused to start. The queue looked permanently stuck until the app
+// was reloaded. Nothing waits forever now.
+const SEND_TIMEOUT = 20000;
+
+function postToSheet(payload) {
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), SEND_TIMEOUT);
+
+  return fetch(ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+    signal: stop.signal
+  })
+    .then(response => response.json())
+    .finally(() => clearTimeout(timer));
+}
+
+
+// Tags put on machines the register already had.
+//
+// Unlike a scan, this can be refused — the code might already be on another
+// lift, or somebody else might have tagged the machine while this phone was
+// out of signal. A refusal is kept and shown rather than retried forever,
+// because no amount of sending it again will change the answer.
+async function pushClaims() {
+  if (!navigator.onLine) return;
+
+  const waiting = readClaims().filter(c => !c.sent);
+  if (!waiting.length) return;
+
+  // The machine travels with the claim on this phone only. The sheet has the
+  // row already; all it needs is which lift and which code.
+  const parcel = waiting.map(c => ({
+    id: c.id, qr: c.qr, serial: c.serial, unit: c.unit, by: c.by, at: c.at
+  }));
+
+  try {
+    const result = await postToSheet({ claims: parcel });
+    if (!result.ok) return;
+
+    const landed = {};
+    (result.saved || []).forEach(id => { landed[id] = true; });
+
+    const why = {};
+    (result.refused || []).forEach(r => { why[r.id] = r.why; });
+
+    const list = readClaims();
+    list.forEach(c => {
+      if (landed[c.id]) c.sent = true;
+      if (why[c.id]) { c.sent = true; c.problem = why[c.id]; }
+    });
+    writeClaims(list);
+
+  } catch (err) {
+    // No signal. It stays on the phone and goes with the next attempt.
+
+  } finally {
+    updatePending();
+  }
+}
+
+
+// Everything the phone is holding, in one go.
+async function sendAll() {
+  await sync();
+  await sendLifts();
+  await pushClaims();
+  await pushRequests();
+  await pushSupport();
+}
+
+
+async function sync() {
+  if (sending || !navigator.onLine) return;
+
+  const waiting = readScans().filter(scan => !scan.sent);
+  if (!waiting.length) return;
+
+  sending = true;
+
+  try {
+    // text/plain on purpose. Sending it as JSON makes the browser ask the
+    // server for permission first, and Apps Script cannot answer that
+    // question — so the scan would never leave the phone.
+    const result = await postToSheet({ scans: waiting });
+    if (!result.ok) return;
+
+    // Mark off only what the sheet actually confirmed.
+    const landed = {};
+    result.saved.forEach(id => { landed[id] = true; });
+
+    const list = readScans();
+    list.forEach(scan => { if (landed[scan.id]) scan.sent = true; });
+    writeScans(list);
+
+  } catch (err) {
+    // No signal, or the sheet is unreachable. The queue keeps them.
+
+  } finally {
+    sending = false;
+    updatePending();
+  }
+}
+
+
+// The count of scans still on the phone. Lives in the footer rather than the
+// page body so it can update without wiping a form somebody is typing into.
+function pendingCount() {
+  return readScans().filter(scan => !scan.sent).length +
+         readLocalMachines().filter(lift => !lift.sent).length +
+         readClaims().filter(claim => !claim.sent).length +
+         readRequests().filter(ask => !ask.sent).length +
+         readSupport().filter(note => !note.sent).length;
+}
+
+
+function updatePending() {
+  const waiting = pendingCount();
+
+  document.getElementById("pending").textContent =
+    waiting ? " · " + waiting + " waiting to send" : "";
+}
+
+
+// A time somebody can read, for the list of what is still waiting.
+function whenText(iso) {
+  const when = new Date(iso);
+  if (isNaN(when.getTime())) return "";
+
+  return when.toLocaleString([], {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+  });
+}
+
+
+updatePending();
+sync();
+fetchRegister().then(() => { if (idFromAddress() === ALL_LIFTS) show(ALL_LIFTS); });
+fetchUntagged();
+
+// Try again whenever the app comes back to the front, or the phone finds
+// signal. Between them, walking out of a hall is enough.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  sync();
+  fetchRegister();
+  fetchUntagged();
+  pushRequests();
+});
+
+window.addEventListener("online", () => { sync(); fetchRegister(); fetchUntagged(); pushRequests(); });
+</script>
+</body>
+</html>

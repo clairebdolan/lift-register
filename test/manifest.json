@@ -1,0 +1,12 @@
+{
+  "name": "LR TEST",
+  "short_name": "LR TEST",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EDEEEC",
+  "theme_color": "#B34700",
+  "icons": [
+    { "src": "icon-lr-2.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
