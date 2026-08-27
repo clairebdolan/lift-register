@@ -736,7 +736,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 65";
+const APP_VERSION = "build 66";
 
 
 // ---------------------------------------------------------------------------
@@ -2251,7 +2251,7 @@ function show(code) {
           <rect x="4" y="4" width="16" height="16" rx="3"/>
           <path d="M12 9v6"/><path d="M9 12h6"/>
         </svg>
-        ADD EQUIPMENT
+        ADD EQUIPMENT TAG
       </button>
 
       <button class="btn red" data-request>
@@ -2711,7 +2711,7 @@ function drawClaimList() {
       `).join("")}
     </div>`
   : `<p class="lede">Nothing matches. If this lift has never been in the
-     register at all, go back and use ADD EQUIPMENT instead.</p>`;
+     register at all, go back and use ADD EQUIPMENT TAG instead.</p>`;
 }
 
 
@@ -2796,7 +2796,7 @@ function drawLifts() {
     <p class="count">${found.length} ${found.length === 1 ? "lift" : "lifts"}
     &middot; ${registerAge()}</p>
     ${all.length ? "" : `<p class="lede">The register is empty. Add machines in the
-      Machines tab of the sheet, or tag one with ADD EQUIPMENT.</p>`}
+      Machines tab of the sheet, or tag one with ADD EQUIPMENT TAG.</p>`}
     <div class="list">
       ${found.map(m => `
         <a href="?id=${keyOf(m)}" data-go="${keyOf(m)}">
