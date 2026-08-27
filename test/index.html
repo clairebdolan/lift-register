@@ -733,7 +733,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 62";
+const APP_VERSION = "build 63";
 
 
 // ---------------------------------------------------------------------------
@@ -834,6 +834,13 @@ const LOCATIONS = [
   "ADMIN", "1st Floor Hallway", "2nd Floor Hallway"
 ];
 
+// The one option that is not a room in the building. Picking it opens a box.
+//
+// It exists because the alternative is worse: a man standing somewhere the
+// list does not cover picks the nearest-sounding room, and from then on that
+// room means two places and nobody can tell which.
+const PLACE_OTHER = "Other";
+
 // The last few locations used on this phone, newest first.
 //
 // A man works one hall all week. Making him scroll past forty rooms to find
@@ -850,7 +857,10 @@ function readRecentPlaces() {
 }
 
 function rememberPlace(place) {
-  if (!place) return;
+  // Only real rooms. A typed-in location is usually a one-off, and putting
+  // it at the top of everybody's list is how a stray answer becomes the
+  // default one.
+  if (!place || !LOCATIONS.includes(place)) return;
 
   const recent = readRecentPlaces().filter(p => p !== place);
   recent.unshift(place);
@@ -868,7 +878,50 @@ function locationOptions(selected) {
       `).join("")}
     </optgroup>`;
 
-  return group("Recent", recent) + group("All locations", LOCATIONS);
+  // Anything held on this phone that is NOT a room came out of the Other
+  // box, so Other is what should be showing when the screen is drawn again.
+  const isOther = Boolean(selected) && !LOCATIONS.includes(selected);
+
+  return group("Recent", recent) + group("All locations", LOCATIONS) +
+    `<option ${isOther ? "selected" : ""}>${PLACE_OTHER}</option>`;
+}
+
+
+// The whole location field: the dropdown, and the box that appears under it
+// when none of the rooms fit.
+//
+// Drawn from one function because it is on two screens now. Two copies of
+// this would drift, and the day they drift is the day a location means one
+// thing on the scan form and another on the service form.
+function locationBlock(field, selected) {
+  const other = Boolean(selected) && !LOCATIONS.includes(selected);
+
+  return `
+    <label class="flabel" for="${field}">Location</label>
+    <select class="finput" id="${field}">
+      ${locationOptions(selected)}
+    </select>
+
+    <div id="${field}OtherWrap" ${other ? "" : "hidden"}>
+      <label class="flabel" for="${field}Other">Where is it?</label>
+      <input class="finput" id="${field}Other" type="text"
+             value="${other ? selected : ""}"
+             placeholder="Somewhere anyone else would recognise"
+             autocomplete="off" autocapitalize="words">
+      <p class="warn-text" id="${field}OtherWarn"></p>
+    </div>`;
+}
+
+
+// What the location field actually says: the room picked, or whatever was
+// typed in the box when none of them fitted.
+function placeFrom(field) {
+  const picker = document.getElementById(field);
+  if (!picker) return "";
+  if (picker.value !== PLACE_OTHER) return picker.value;
+
+  const box = document.getElementById(field + "Other");
+  return box ? box.value.trim() : "";
 }
 
 
@@ -907,17 +960,25 @@ function today() {
 
 function recordScan(code) {
   const nameField  = document.getElementById("who");
-  const placeField = document.getElementById("where");
   const condField  = document.getElementById("condition");
   const noteField  = document.getElementById("fault");
 
   const name      = nameField.value.trim();
+  const place     = placeFrom("where");
   const condition = condField.value;
   const note      = noteField ? noteField.value.trim() : "";
 
   if (!name) {
     nameField.focus();
     document.getElementById("nameWarn").textContent = "Put your name in first.";
+    return;
+  }
+
+  // Other picked and the box left empty. A blank location is worse than a
+  // wrong one — a wrong one can be argued with, a blank one is just gone.
+  if (!place) {
+    document.getElementById("whereOther").focus();
+    document.getElementById("whereOtherWarn").textContent = "Say where it is.";
     return;
   }
 
@@ -933,8 +994,8 @@ function recordScan(code) {
   // Remember these for next time. The whole point of no logins is that the
   // second scan of the day is one tap.
   localStorage.setItem(LAST_NAME, name);
-  localStorage.setItem(LAST_PLACE, placeField.value);
-  rememberPlace(placeField.value);
+  localStorage.setItem(LAST_PLACE, place);
+  rememberPlace(place);
   localStorage.setItem(LAST_PROJ, document.getElementById("project").value);
 
   const callOff = document.getElementById("calloff").value === "Yes";
@@ -955,7 +1016,8 @@ function recordScan(code) {
     name: name,
     project: document.getElementById("project").value,   // who is using it
     job: machine.job || "",                              // who it is rented to
-    place: placeField.value,
+    place: place,
+    inspection: document.getElementById("inspection").value,
     condition: condition,
     note: note,
     callOff: callOff,
@@ -1317,6 +1379,108 @@ function sendRequest() {
 }
 
 
+// ---------------------------------------------------------------------------
+// REPORTING A BREAKDOWN
+//
+// The same shape as everything else in here: written to the phone first, sent
+// from behind the screen. A fault found in a hall with no signal is recorded
+// the moment it is seen and goes out when he walks into the yard.
+// ---------------------------------------------------------------------------
+
+const SERVICE_STORE = KEY + "service";
+
+function readServices() {
+  try {
+    return JSON.parse(localStorage.getItem(SERVICE_STORE)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function sendService() {
+  const warn = document.getElementById("svcWarn");
+  const val  = id => document.getElementById(id).value.trim();
+
+  const ask = {
+    id:      newId(),
+    name:    val("svcName"),
+    project: document.getElementById("svcProject").value,
+    unit:    val("svcUnit"),
+    place:   placeFrom("svcWhere"),
+    vendor:  document.getElementById("svcVendor").value,
+    fault:   val("svcFault"),
+    at:      new Date().toISOString()
+  };
+
+  // Every one of these is something nobody can supply later from memory.
+  // A half-filled service request reads like a rumour.
+  if (!ask.name) {
+    warn.textContent = "Put your name in first.";
+    return;
+  }
+
+  if (!ask.unit) {
+    warn.textContent = "Which unit is it? The number off the vendor's sticker.";
+    return;
+  }
+
+  if (!ask.place) {
+    warn.textContent = "Say where it is, or nobody can go and find it.";
+    return;
+  }
+
+  if (!ask.vendor) {
+    warn.textContent = "Pick the vendor — they are the ones who get called.";
+    return;
+  }
+
+  if (!ask.fault) {
+    warn.textContent = "Say what's wrong with it. That is the part that gets it fixed.";
+    return;
+  }
+
+  warn.textContent = "";
+  localStorage.setItem(LAST_NAME, ask.name);
+  localStorage.setItem(LAST_PROJ, ask.project);
+  localStorage.setItem(LAST_PLACE, ask.place);
+  rememberPlace(ask.place);
+
+  const waiting = readServices();
+  waiting.push(ask);
+  localStorage.setItem(SERVICE_STORE, JSON.stringify(waiting));
+
+  serviceSent = ask;
+  show(SERVICE);
+  updatePending();
+
+  pushServices();
+}
+
+
+async function pushServices() {
+  if (!navigator.onLine) return;
+
+  const waiting = readServices().filter(r => !r.sent);
+  if (!waiting.length) return;
+
+  try {
+    const result = await postToSheet({ services: waiting });
+    if (!result.ok) return;
+
+    const landed = {};
+    (result.saved || []).forEach(id => { landed[id] = true; });
+
+    const all = readServices();
+    all.forEach(r => { if (landed[r.id]) r.sent = true; });
+    localStorage.setItem(SERVICE_STORE, JSON.stringify(all));
+    updatePending();
+
+  } catch (err) {
+    // No signal. It waits.
+  }
+}
+
+
 async function pushRequests() {
   if (!navigator.onLine) return;
 
@@ -1361,6 +1525,7 @@ function idFromAddress() {
   if (params.get("pending")) return PENDING;
   if (params.get("recent")) return RECENT;
   if (params.get("request")) return REQUEST;
+  if (params.get("service")) return SERVICE;
   if (params.get("known")) return ALREADY;
   if (params.get("claim")) return CLAIM;
   if (params.get("new")) return INTAKE;
@@ -1869,6 +2034,63 @@ function show(code) {
           <button class="btn" data-sendrequest>Send request</button>
         </div>`}`;
 
+  } else if (code === SERVICE) {
+    // Something on site is broken. This is the operator or the foreman
+    // saying so, and it lands as an email as well as a row, because a fault
+    // sitting unread in a spreadsheet is a machine standing still.
+    const lastName    = localStorage.getItem(LAST_NAME) || "";
+    const lastProject = localStorage.getItem(LAST_PROJ) || "";
+    const lastPlace   = localStorage.getItem(LAST_PLACE) || "";
+
+    app.innerHTML = `
+      ${serviceSent ? `
+        <div class="card recorded">
+          <p class="who">Service request sent</p>
+          <p class="sub">Unit #${serviceSent.unit} &middot; ${serviceSent.vendor}</p>
+          <p class="sub">${serviceSent.project} &middot; ${serviceSent.place}
+          &middot; ${serviceSent.name}</p>
+          <p class="sub"><span class="flag">${serviceSent.fault}</span></p>
+        </div>` : `
+        <div class="card form">
+          <label class="flabel" for="svcName">Your name</label>
+          <input class="finput" id="svcName" type="text" value="${lastName}"
+                 placeholder="First and last" autocomplete="off"
+                 autocapitalize="words" spellcheck="false">
+
+          <label class="flabel" for="svcProject">Project</label>
+          <select class="finput" id="svcProject">
+            ${PROJECTS.map(p => `
+              <option ${p === lastProject ? "selected" : ""}>${p}</option>
+            `).join("")}
+          </select>
+
+          <!-- Typed, not picked off the register. The lift being reported is
+               often one nobody can get a tag or a screen near, and a list to
+               scroll is the wrong tool when you are reading a sticker. -->
+          <label class="flabel" for="svcUnit">Unit #</label>
+          <input class="finput" id="svcUnit" type="text"
+                 placeholder="The number on the vendor's sticker"
+                 autocomplete="off" autocapitalize="characters" spellcheck="false">
+
+          ${locationBlock("svcWhere", lastPlace)}
+
+          <!-- No "no preference" here, unlike asking for equipment. This is
+               the company that gets phoned, so leaving it blank just moves
+               the work back to whoever reads the email. -->
+          <label class="flabel" for="svcVendor">Vendor</label>
+          <select class="finput" id="svcVendor">
+            <option value="">Which vendor?</option>
+            ${VENDORS.map(v => `<option>${v}</option>`).join("")}
+          </select>
+
+          <label class="flabel" for="svcFault">What's wrong?</label>
+          <textarea class="finput" id="svcFault" rows="4"
+                    placeholder="Enough that someone could bring the right part"></textarea>
+
+          <p class="warn-text" id="svcWarn"></p>
+          <button class="btn" data-sendservice>Send service request</button>
+        </div>`}`;
+
   } else if (code === CLAIM) {
     // A blank tag in one hand and a lift in front of you that the register
     // already knows about. This screen does one thing: join the two.
@@ -2012,6 +2234,18 @@ function show(code) {
           <path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h11"/>
         </svg>
         ALL LIFTS
+      </button>
+
+      <!-- Red, and above the two navy bars, because a broken machine is
+           urgent in a way that asking for another one is not. Deliberately
+           reachable WITHOUT scanning: the tag is frequently the thing you
+           cannot get to - a lift dead in a corner, a tag torn off - and a man
+           standing next to it should not have to hunt for a way to say so. -->
+      <button class="btn red" data-service>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z"/>
+        </svg>
+        REQUEST SERVICE
       </button>
 
       <button class="btn navy" data-intake>
@@ -2226,9 +2460,19 @@ function useBlock(machine) {
         `).join("")}
       </select>
 
-      <label class="flabel" for="where">Location</label>
-      <select class="finput" id="where">
-        ${locationOptions(lastPlace)}
+      ${locationBlock("where", lastPlace)}
+
+      <!-- Asked before condition on purpose. What state a machine is in is a
+           different question depending on whether anybody actually looked at
+           it, and the order the questions come in is what makes that obvious.
+
+           Starts at No. A pre-filled Yes is a signature nobody gave, and the
+           whole value of this field is that it is only worth having if it is
+           true. -->
+      <label class="flabel" for="inspection">Inspection Performed?</label>
+      <select class="finput" id="inspection">
+        <option>No</option>
+        <option>Yes</option>
       </select>
 
       <label class="flabel" for="condition">Condition</label>
@@ -2306,6 +2550,7 @@ const INTAKE    = "__intake__";
 const ALREADY   = "__already__";
 const CLAIM     = "__claim__";
 const REQUEST   = "__request__";
+const SERVICE   = "__service__";
 const MENU      = "__menu__";
 const PENDING   = "__pending__";
 const RECENT    = "__recent__";
@@ -2322,6 +2567,9 @@ let claimCode = "";
 
 // The equipment request just sent, so the screen can confirm it.
 let requestSent = null;
+
+// The service request just sent, same idea.
+let serviceSent = null;
 
 // The machine just added, so the front screen can confirm it.
 let justAdded = null;
@@ -2342,6 +2590,7 @@ let depth = 0;
 function go(code) {
   justSaved = null;     // a receipt belongs to the screen it was shown on
   requestSent = null;
+  serviceSent = null;
   depth++;
 
   // Moving between screens is a fair moment to try the queue again — most
@@ -2354,6 +2603,7 @@ function go(code) {
                 : code === PENDING  ? "?pending=1"
                 : code === RECENT   ? "?recent=1"
                 : code === REQUEST  ? "?request=1"
+                : code === SERVICE  ? "?service=1"
                 : code === ALREADY  ? "?known=1"
                 : code === CLAIM    ? "?claim=1"
                 : code === INTAKE   ? "?new=1"
@@ -2838,6 +3088,16 @@ document.addEventListener("click", event => {
     show(PENDING);
   }
 
+  if (event.target.closest("[data-service]")) {
+    event.preventDefault();
+    go(SERVICE);
+  }
+
+  if (event.target.closest("[data-sendservice]")) {
+    event.preventDefault();
+    sendService();
+  }
+
   if (event.target.closest("[data-sendrequest]")) {
     event.preventDefault();
     sendRequest();
@@ -2881,6 +3141,17 @@ document.addEventListener("change", event => {
     if (!wrap.hidden) document.getElementById("fault").focus();
   }
 
+  // None of the rooms fit. Open a box, rather than making somebody pick the
+  // nearest-sounding wrong one.
+  if (event.target.id === "where" || event.target.id === "svcWhere") {
+    const wrap = document.getElementById(event.target.id + "OtherWrap");
+
+    if (wrap) {
+      wrap.hidden = event.target.value !== PLACE_OTHER;
+      if (!wrap.hidden) document.getElementById(event.target.id + "Other").focus();
+    }
+  }
+
   // Asking for a call off comes with somewhere to put the machine.
   if (event.target.id === "jobFilter") drawLifts();
 
@@ -2892,7 +3163,7 @@ document.addEventListener("change", event => {
 document.getElementById("cancel").addEventListener("click", closeScanner);
 
 document.getElementById("version").textContent =
-  APP_VERSION + (IS_TEST ? " 00b7 TEST" : "");
+  APP_VERSION + (IS_TEST ? " · TEST" : "");
 
 
 // ---------------------------------------------------------------------------
@@ -2980,6 +3251,7 @@ async function sendAll() {
   await sendLifts();
   await pushClaims();
   await pushRequests();
+  await pushServices();
   await pushSupport();
 }
 
@@ -3024,6 +3296,7 @@ function pendingCount() {
          readLocalMachines().filter(lift => !lift.sent).length +
          readClaims().filter(claim => !claim.sent).length +
          readRequests().filter(ask => !ask.sent).length +
+         readServices().filter(ask => !ask.sent).length +
          readSupport().filter(note => !note.sent).length;
 }
 
@@ -3062,7 +3335,9 @@ document.addEventListener("visibilitychange", () => {
   pushRequests();
 });
 
-window.addEventListener("online", () => { sync(); fetchRegister(); fetchUntagged(); pushRequests(); });
+window.addEventListener("online", () => {
+  sync(); fetchRegister(); fetchUntagged(); pushRequests(); pushServices();
+});
 </script>
 </body>
 </html>
