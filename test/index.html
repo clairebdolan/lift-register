@@ -733,7 +733,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 63";
+const APP_VERSION = "build 64";
 
 
 // ---------------------------------------------------------------------------
@@ -2256,12 +2256,12 @@ function show(code) {
         ADD EQUIPMENT
       </button>
 
-      <button class="btn navy" data-request>
+      <button class="btn red" data-request>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M7 4h10l3 3v13H7z"/><path d="M17 4v3h3"/>
           <path d="M10 12h6"/><path d="M10 16h4"/>
         </svg>
-        SUBMIT EQUIPMENT REQUEST
+        REQUEST NEW EQUIPMENT
       </button>`;
 
   } else if (!machine) {
