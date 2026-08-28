@@ -758,7 +758,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 75";
+const APP_VERSION = "build 76";
 
 
 // ---------------------------------------------------------------------------
@@ -1751,6 +1751,35 @@ function register() {
 
 // Ask the sheet for the register. Quiet on failure — a phone with no signal
 // keeps the copy it already has, which is the whole point of keeping one.
+// True while the register is on its way from the sheet.
+//
+// "Nothing here" and "I have not finished asking" look identical on a screen
+// and mean completely different things to the man holding the phone. On a
+// phone that has just installed the app, the second one is the truth for the
+// first few seconds - and Apps Script can take several of them to wake up.
+let fetchingRegister = false;
+
+// Redraw the equipment list, if that is what is on screen. Called whenever
+// new data lands, so a list drawn before the data arrived fixes itself
+// instead of sitting there looking empty.
+function refreshLists() {
+  if (document.getElementById("lifts")) drawLifts();
+}
+
+// Go and get the register, and keep the screen honest while it happens.
+async function refreshRegister() {
+  fetchingRegister = true;
+  refreshLists();
+
+  try {
+    await Promise.all([fetchRegister(), fetchUntagged()]);
+  } finally {
+    fetchingRegister = false;
+    refreshLists();
+  }
+}
+
+
 async function fetchRegister() {
   if (!navigator.onLine) return;
 
@@ -1762,6 +1791,10 @@ async function fetchRegister() {
 
     localStorage.setItem(SHEET_MACHINES, JSON.stringify(result.machines));
     localStorage.setItem(REGISTER_AT, new Date().toISOString());
+
+    // This never used to redraw - only the untagged list did - so a machines
+    // list arriving after the screen was drawn stayed invisible.
+    refreshLists();
 
     // A machine this phone added is only held onto until the sheet has it.
     //
@@ -1817,7 +1850,7 @@ async function fetchUntagged() {
     //
     // Only the rows are redrawn, not the whole screen, so anything already
     // typed in the search box stays where it is.
-    if (after !== before && document.getElementById("lifts")) drawLifts();
+    if (after !== before) refreshLists();
 
   } catch (err) {
     // Keep the copy we have.
@@ -2245,6 +2278,12 @@ function show(code) {
       <div id="lifts"></div>`;
 
     drawLifts();
+
+    // Ask the sheet again on the way in. This is the screen whose whole job
+    // is to say what is on site, and the answer it was drawn from could be
+    // from this morning - or, on a phone that has just been set up, from
+    // nothing at all.
+    refreshRegister();
 
   } else if (!code) {
     // The way in. Four bars and nothing else to read.
@@ -2841,6 +2880,37 @@ function attachTag(key) {
 function drawLifts() {
   const needle = (document.getElementById("find").value || "").trim().toLowerCase();
   const job    = document.getElementById("jobFilter").value;
+  const all    = register();
+
+  // Nothing on this phone yet, which is not the same as nothing existing.
+  //
+  // This screen used to answer "0 lifts" while the register was still in the
+  // air, and 0 is a real answer - it reads as "we have no equipment on that
+  // job", so somebody picks the job again to be sure, and decides the app is
+  // broken. Say which of the three it actually is.
+  if (!all.length) {
+    // Four different things, and they were all showing the same sentence.
+    // "The register is empty" is a claim about the SHEET; saying it when the
+    // phone simply could not reach the sheet sends somebody to go and look at
+    // a spreadsheet that is perfectly fine.
+    //
+    // REGISTER_AT is only written on a fetch that worked, so its absence is
+    // the honest test for "this phone has never managed to ask".
+    const everGot = Boolean(localStorage.getItem(REGISTER_AT));
+
+    document.getElementById("lifts").innerHTML =
+      fetchingRegister
+        ? `<p class="lede">Fetching the register…</p>`
+      : !navigator.onLine
+        ? `<p class="lede">No signal, and this phone hasn't got the register
+           yet. It will fill in on its own the moment there's a bar.</p>`
+      : !everGot
+        ? `<p class="lede">Couldn't reach the sheet just now. It keeps trying
+           on its own — this will fill in when it gets through.</p>`
+        : `<p class="lede">The register is empty. Add machines in the Machines
+           tab of the sheet, or tag one with ADD EQUIPMENT TAG.</p>`;
+    return;
+  }
 
   // Nothing chosen and nothing typed: show nothing. A hundred and forty lifts
   // in one list is not a starting point, it is a wall.
@@ -2850,8 +2920,6 @@ function drawLifts() {
       serial number.</p>`;
     return;
   }
-
-  const all   = register();
   const found = all.filter(m => {
     if (job && job !== "ALL" && m.job !== job) return false;
 
@@ -2865,8 +2933,7 @@ function drawLifts() {
   document.getElementById("lifts").innerHTML = `
     <p class="count">${found.length} ${found.length === 1 ? "lift" : "lifts"}
     &middot; ${registerAge()}</p>
-    ${all.length ? "" : `<p class="lede">The register is empty. Add machines in the
-      Machines tab of the sheet, or tag one with ADD EQUIPMENT TAG.</p>`}
+FROM
     <div class="list">
       ${found.map(m => `
         <a href="?id=${keyOf(m)}" data-go="${keyOf(m)}">
@@ -3430,8 +3497,7 @@ function whenText(iso) {
 
 updatePending();
 sendAll();
-fetchRegister().then(() => { if (idFromAddress() === ALL_LIFTS) show(ALL_LIFTS); });
-fetchUntagged();
+refreshRegister().then(() => { if (idFromAddress() === ALL_LIFTS) show(ALL_LIFTS); });
 
 // Try again whenever the app comes back to the front, or the phone finds
 // signal. Between them, walking out of a hall is enough.
@@ -3447,12 +3513,11 @@ fetchUntagged();
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
   sendAll();
-  fetchRegister();
-  fetchUntagged();
+  refreshRegister();
 });
 
 window.addEventListener("online", () => {
-  sendAll(); fetchRegister(); fetchUntagged();
+  sendAll(); refreshRegister();
 });
 </script>
 </body>
