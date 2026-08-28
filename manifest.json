@@ -1,6 +1,6 @@
 {
-  "name": "Lift Register",
-  "short_name": "Lift Register",
+  "name": "Equipment Register",
+  "short_name": "EQR",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

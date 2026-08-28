@@ -3,15 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lift Register</title>
+<title>Equipment Register</title>
 
-<!-- The home screen icon: LR in white on company navy, cut from the Loenbro
-     wordmark. iOS rounds the corners itself, so the file is a full square.
-     The name under the icon stays "Lift Register". -->
+<!-- The home screen icon: EQR in white on company navy, in the Loenbro
+     wordmark's face. iOS rounds the corners itself, so the file is a full
+     square.
+
+     The label under it is EQR rather than the full name, because iOS cuts a
+     home screen label off at about a dozen characters and "Equipment Regi..."
+     is worse than the three letters on the tile above it.
+
+     The FILE is still called icon-lr-2.png. Nobody sees a filename, and
+     renaming it would mean touching the service worker's file list for no
+     reason anybody could ever notice. -->
 <link rel="apple-touch-icon" href="icon-lr-2.png">
 <link rel="icon" href="icon-lr-2.png">
 <link rel="manifest" href="manifest.json">
-<meta name="apple-mobile-web-app-title" content="Lift Register">
+<meta name="apple-mobile-web-app-title" content="EQR">
 
 <!-- Opens without Safari's address bar and buttons. Newer iOS reads this off
      manifest.json on its own, but older iPads only look at this line — and
@@ -151,11 +159,27 @@
     font-family: "Libre Franklin", "Franklin Gothic Heavy",
                  "Avenir Next Condensed", Arial, sans-serif;
     font-weight: 800;
-    font-size: 21px;
+
+    /* Shrinks on a narrow phone rather than wrapping or running off the
+       edge. The bar carries the screen's name now, and NEW EQUIPMENT REQUEST
+       is twenty-one characters - a good deal longer than the app's own name
+       this was set for. */
+    font-size: clamp(16px, 5vw, 21px);
+    white-space: nowrap;
+
     letter-spacing: 0.01em;
     text-transform: uppercase;
     color: #fff;
   }
+
+  /* THE TEST COPY. Same file, different address.
+
+     The bar stays navy on purpose. It was orange, and that made the one job
+     of a test app impossible — you cannot judge how a screen looks against a
+     colour the real app does not have. The word after the name and the
+     footer say which copy this is; the orange lives on the home screen icon,
+     where it does its job before the app is even open. */
+  body.is-test .brand::after { content: " \00B7 TEST"; opacity: 0.72; }
 
   .card {
     background: var(--card);
@@ -485,6 +509,13 @@
   .btn.red          { background: var(--serial); }
   .btn.red:active   { background: #7F211A; }
 
+  /* Company grey. Asking for a machine that is not on site yet is a want,
+     not an emergency, and it should not shout the way a broken lift does.
+     White on this grey is about 5.9:1, so it still reads at arms length in
+     a bright hall. */
+  .btn.grey         { background: var(--ink-2); }
+  .btn.grey:active  { background: #4C5054; }
+
   .btn.secondary {
     margin-top: 18px;
     margin-bottom: 0;
@@ -591,7 +622,7 @@
 <div class="wrap">
   <div class="head">
     <button class="menubtn" id="headbtn" data-menu aria-label="Menu">&#9776;</button>
-    <div class="brand">Lift Register</div>
+    <div class="brand" id="brand">Equipment Register</div>
   </div>
 
   <!-- Everything below gets filled in by the script at the bottom. -->
@@ -727,7 +758,46 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 60";
+const APP_VERSION = "build 73";
+
+
+// ---------------------------------------------------------------------------
+// 2a. WHICH COPY OF THE APP IS THIS?
+//
+// There are two, and they are the SAME FILE. The live one everybody has:
+//     clairebdolan.github.io/lift-register/
+// and a test one only Claire has:
+//     clairebdolan.github.io/lift-register/test/
+//
+// A change is tried in the test folder first. When it is right, this file is
+// copied over the live one and everybody gets it.
+//
+// That copy only stays safe if the two files are identical, so nothing here
+// is edited by hand to switch between them. The app reads its own address and
+// works out which one it is, which means there is nothing to remember to
+// change back at five o'clock on a Friday.
+// ---------------------------------------------------------------------------
+
+const IS_TEST = location.pathname.includes("/test/");
+
+// A phone gives out one storage locker per WEBSITE, not per folder. Both
+// copies live on clairebdolan.github.io, so without a different prefix the
+// test app would be reading and writing the live app's queued scans. Every
+// stored name below is built from this.
+const KEY = IS_TEST ? "liftregister-test." : "liftregister.";
+
+if (IS_TEST) {
+  document.body.classList.add("is-test");
+
+  // The name that ends up under the icon on the home screen. iOS reads it
+  // at the moment Add to Home Screen is tapped, so setting it here is worth
+  // a try; if that phone ignores it, the orange icon still says which is
+  // which, which is why the icon differs too.
+  document.title = "EQR TEST";
+  const appleName = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (appleName) appleName.content = "EQR TEST";
+}
+
 
 // ---------------------------------------------------------------------------
 // 2b. WHAT THIS PHONE HAS RECORDED
@@ -744,12 +814,28 @@ const APP_VERSION = "build 60";
 // Where scans go when the phone has signal. This is the Apps Script attached
 // to Claire's Google Sheet, published so the app can post to it without a
 // login — which is the whole reason this is on Google and not Microsoft.
-const ENDPOINT = "https://script.google.com/macros/s/AKfycbw8MM_crqCtagSZzM1xXbnSQEhgQg1jc0G1buNIMCbCNa7PQRISLYnbgSVX2SWZmR_0AA/exec";
+//
+// Two of them: the real register, and a copy of that sheet that only the test
+// app writes to. Test scans and test machines land in the copy, so nothing
+// tried out on the test phone can ever turn up in the real register.
+const LIVE_ENDPOINT = "https://script.google.com/macros/s/AKfycbw8MM_crqCtagSZzM1xXbnSQEhgQg1jc0G1buNIMCbCNa7PQRISLYnbgSVX2SWZmR_0AA/exec";
 
-const SCAN_STORE  = "liftregister.scans";
-const LAST_NAME   = "liftregister.lastname";
-const LAST_PLACE  = "liftregister.lastplace";
-const LAST_PROJ   = "liftregister.lastproject";
+// The TEST sheet — a copy of the register, deployed 2026-08-27. Only the
+// test app writes here, so a test scan can never land in the real register.
+//
+// This is a different Apps Script attached to a different spreadsheet, which
+// is why the address is completely different and not a setting on the one
+// above. If this script is ever changed, remember it needs Deploy > Manage
+// deployments > New version, or the phone keeps talking to the old code.
+const TEST_ENDPOINT = "https://script.google.com/macros/s/AKfycbxRUMOjStqAGcCZKzS5Hv8O8ZlU6yRtpdMZYrmRqJvHDOt1lcQmv8k5Hmdl1JAttOKU1g/exec";
+
+const ENDPOINT = IS_TEST ? TEST_ENDPOINT : LIVE_ENDPOINT;
+
+
+const SCAN_STORE  = KEY + "scans";
+const LAST_NAME   = KEY + "lastname";
+const LAST_PLACE  = KEY + "lastplace";
+const LAST_PROJ   = KEY + "lastproject";
 
 // The building. A fixed list on purpose — free text turns into "hall 2",
 // "H2" and "hall two" and stops being countable.
@@ -773,12 +859,23 @@ const LOCATIONS = [
   "ADMIN", "1st Floor Hallway", "2nd Floor Hallway"
 ];
 
+// The option on the end of a dropdown that means "none of these". Picking it
+// opens a box underneath.
+//
+// It exists because the alternative is worse: somebody whose answer is not on
+// the list picks the nearest-sounding one, and from then on that answer means
+// two things and nobody can tell which.
+//
+// One constant, used by the location field and the vendor field both, so the
+// code that opens the box can be written once and work for either.
+const OTHER = "Other";
+
 // The last few locations used on this phone, newest first.
 //
 // A man works one hall all week. Making him scroll past forty rooms to find
 // the one he was in an hour ago is the friction that turns a ten second job
 // into one people skip.
-const RECENT_PLACES = "liftregister.recentplaces";
+const RECENT_PLACES = KEY + "recentplaces";
 
 function readRecentPlaces() {
   try {
@@ -789,7 +886,10 @@ function readRecentPlaces() {
 }
 
 function rememberPlace(place) {
-  if (!place) return;
+  // Only real rooms. A typed-in location is usually a one-off, and putting
+  // it at the top of everybody's list is how a stray answer becomes the
+  // default one.
+  if (!place || !LOCATIONS.includes(place)) return;
 
   const recent = readRecentPlaces().filter(p => p !== place);
   recent.unshift(place);
@@ -807,7 +907,50 @@ function locationOptions(selected) {
       `).join("")}
     </optgroup>`;
 
-  return group("Recent", recent) + group("All locations", LOCATIONS);
+  // Anything held on this phone that is NOT a room came out of the Other
+  // box, so Other is what should be showing when the screen is drawn again.
+  const isOther = Boolean(selected) && !LOCATIONS.includes(selected);
+
+  return group("Recent", recent) + group("All locations", LOCATIONS) +
+    `<option ${isOther ? "selected" : ""}>${OTHER}</option>`;
+}
+
+
+// The whole location field: the dropdown, and the box that appears under it
+// when none of the rooms fit.
+//
+// Drawn from one function because it is on two screens now. Two copies of
+// this would drift, and the day they drift is the day a location means one
+// thing on the scan form and another on the service form.
+function locationBlock(field, selected) {
+  const other = Boolean(selected) && !LOCATIONS.includes(selected);
+
+  return `
+    <label class="flabel" for="${field}">Location</label>
+    <select class="finput" id="${field}">
+      ${locationOptions(selected)}
+    </select>
+
+    <div id="${field}OtherWrap" ${other ? "" : "hidden"}>
+      <label class="flabel" for="${field}Other">Where is it?</label>
+      <input class="finput" id="${field}Other" type="text"
+             value="${other ? selected : ""}"
+             placeholder="Somewhere anyone else would recognise"
+             autocomplete="off" autocapitalize="words">
+      <p class="warn-text" id="${field}OtherWarn"></p>
+    </div>`;
+}
+
+
+// What the location field actually says: the room picked, or whatever was
+// typed in the box when none of them fitted.
+function placeFrom(field) {
+  const picker = document.getElementById(field);
+  if (!picker) return "";
+  if (picker.value !== OTHER) return picker.value;
+
+  const box = document.getElementById(field + "Other");
+  return box ? box.value.trim() : "";
 }
 
 
@@ -846,17 +989,25 @@ function today() {
 
 function recordScan(code) {
   const nameField  = document.getElementById("who");
-  const placeField = document.getElementById("where");
   const condField  = document.getElementById("condition");
   const noteField  = document.getElementById("fault");
 
   const name      = nameField.value.trim();
+  const place     = placeFrom("where");
   const condition = condField.value;
   const note      = noteField ? noteField.value.trim() : "";
 
   if (!name) {
     nameField.focus();
     document.getElementById("nameWarn").textContent = "Put your name in first.";
+    return;
+  }
+
+  // Other picked and the box left empty. A blank location is worse than a
+  // wrong one — a wrong one can be argued with, a blank one is just gone.
+  if (!place) {
+    document.getElementById("whereOther").focus();
+    document.getElementById("whereOtherWarn").textContent = "Say where it is.";
     return;
   }
 
@@ -872,8 +1023,8 @@ function recordScan(code) {
   // Remember these for next time. The whole point of no logins is that the
   // second scan of the day is one tap.
   localStorage.setItem(LAST_NAME, name);
-  localStorage.setItem(LAST_PLACE, placeField.value);
-  rememberPlace(placeField.value);
+  localStorage.setItem(LAST_PLACE, place);
+  rememberPlace(place);
   localStorage.setItem(LAST_PROJ, document.getElementById("project").value);
 
   const callOff = document.getElementById("calloff").value === "Yes";
@@ -894,7 +1045,8 @@ function recordScan(code) {
     name: name,
     project: document.getElementById("project").value,   // who is using it
     job: machine.job || "",                              // who it is rented to
-    place: placeField.value,
+    place: place,
+    inspection: document.getElementById("inspection").value,
     condition: condition,
     note: note,
     callOff: callOff,
@@ -941,7 +1093,7 @@ async function addLift() {
     id: newId(),
     qr:     intakeCode,
     job:    val("inJob"),
-    vendor: val("inVendor"),
+    vendor: vendorFrom("inVendor"),
     unit:   val("inUnit"),
     serial: val("inSerial"),
     po:     val("inPo"),          // may be blank
@@ -1131,7 +1283,7 @@ function closeDrawer() {
 // a complaint sitting in a spreadsheet is a complaint nobody answers.
 // ---------------------------------------------------------------------------
 
-const SUPPORT_STORE = "liftregister.support";
+const SUPPORT_STORE = KEY + "support";
 
 function readSupport() {
   try {
@@ -1205,7 +1357,7 @@ async function pushSupport() {
 // rather than sitting in a spreadsheet waiting to be noticed.
 // ---------------------------------------------------------------------------
 
-const REQUEST_STORE = "liftregister.requests";
+const REQUEST_STORE = KEY + "requests";
 
 function readRequests() {
   try {
@@ -1224,7 +1376,7 @@ function sendRequest() {
     name:      val("reqName"),
     job:       val("reqJob"),
     equipment: val("reqWhat"),
-    vendor:    val("reqVendor"),
+    vendor:    vendorFrom("reqVendor"),
     at:        new Date().toISOString()
   };
 
@@ -1253,6 +1405,112 @@ function sendRequest() {
   updatePending();
 
   pushRequests();
+}
+
+
+// ---------------------------------------------------------------------------
+// REPORTING A BREAKDOWN
+//
+// The same shape as everything else in here: written to the phone first, sent
+// from behind the screen. A fault found in a hall with no signal is recorded
+// the moment it is seen and goes out when he walks into the yard.
+// ---------------------------------------------------------------------------
+
+const SERVICE_STORE = KEY + "service";
+
+function readServices() {
+  try {
+    return JSON.parse(localStorage.getItem(SERVICE_STORE)) || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function sendService() {
+  const warn = document.getElementById("svcWarn");
+  const val  = id => document.getElementById(id).value.trim();
+
+  const ask = {
+    id:      newId(),
+    name:    val("svcName"),
+    project: document.getElementById("svcProject").value,
+    unit:    val("svcUnit"),
+    serial:  val("svcSerial"),
+    place:   placeFrom("svcWhere"),
+    vendor:  vendorFrom("svcVendor"),
+    fault:   val("svcFault"),
+    at:      new Date().toISOString()
+  };
+
+  // Every one of these is something nobody can supply later from memory.
+  // A half-filled service request reads like a rumour.
+  if (!ask.name) {
+    warn.textContent = "Put your name in first.";
+    return;
+  }
+
+  // One of the two, not both. Insisting on the unit number would turn the
+  // machine with no sticker into the one machine nobody can report.
+  if (!ask.unit && !ask.serial) {
+    warn.textContent =
+      "Put in the unit number — or the serial number, if there is no unit number on it.";
+    return;
+  }
+
+  if (!ask.place) {
+    warn.textContent = "Say where it is, or nobody can go and find it.";
+    return;
+  }
+
+  if (!ask.vendor) {
+    warn.textContent = "Pick the vendor — they are the ones who get called.";
+    return;
+  }
+
+  if (!ask.fault) {
+    warn.textContent = "Say what's wrong with it. That is the part that gets it fixed.";
+    return;
+  }
+
+  warn.textContent = "";
+  localStorage.setItem(LAST_NAME, ask.name);
+  localStorage.setItem(LAST_PROJ, ask.project);
+  localStorage.setItem(LAST_PLACE, ask.place);
+  rememberPlace(ask.place);
+
+  const waiting = readServices();
+  waiting.push(ask);
+  localStorage.setItem(SERVICE_STORE, JSON.stringify(waiting));
+
+  serviceSent = ask;
+  show(SERVICE);
+  updatePending();
+
+  pushServices();
+}
+
+
+async function pushServices() {
+  if (!navigator.onLine) return;
+
+  const waiting = readServices().filter(r => !r.sent);
+  if (!waiting.length) return;
+
+  try {
+    const result = await postToSheet({ services: waiting });
+    if (!result.ok) return;
+
+    const landed = {};
+    (result.saved || []).forEach(id => { landed[id] = true; });
+
+    const all = readServices();
+    all.forEach(r => { if (landed[r.id]) r.sent = true; });
+    localStorage.setItem(SERVICE_STORE, JSON.stringify(all));
+    updatePending();
+
+  } catch (err) {
+    // No signal. It waits.
+  }
 }
 
 
@@ -1300,6 +1558,7 @@ function idFromAddress() {
   if (params.get("pending")) return PENDING;
   if (params.get("recent")) return RECENT;
   if (params.get("request")) return REQUEST;
+  if (params.get("service")) return SERVICE;
   if (params.get("known")) return ALREADY;
   if (params.get("claim")) return CLAIM;
   if (params.get("new")) return INTAKE;
@@ -1347,11 +1606,11 @@ function findMachine(code) {
 // exist, which is the one thing that would stop anyone trusting it.
 // ---------------------------------------------------------------------------
 
-const LOCAL_MACHINES = "liftregister.machines";   // added on this phone
-const SHEET_MACHINES = "liftregister.register";   // last copy of the sheet
-const REGISTER_AT    = "liftregister.registerat"; // when that copy arrived
-const UNTAGGED_STORE = "liftregister.untagged";   // register rows with no tag
-const CLAIM_STORE    = "liftregister.claims";     // tags put on, not sent yet
+const LOCAL_MACHINES = KEY + "machines";   // added on this phone
+const SHEET_MACHINES = KEY + "register";   // last copy of the sheet
+const REGISTER_AT    = KEY + "registerat"; // when that copy arrived
+const UNTAGGED_STORE = KEY + "untagged";   // register rows with no tag
+const CLAIM_STORE    = KEY + "claims";     // tags put on, not sent yet
 
 function readLocalMachines() {
   try {
@@ -1553,7 +1812,7 @@ async function fetchUntagged() {
 
     // This list nearly always lands after the screen has been drawn, and
     // until now nothing redrew it. So lifts pasted into the sheet a minute
-    // ago were not on ALL LIFTS until the app was opened a second time —
+    // ago were not on ALL EQUIPMENT until the app was opened a second time —
     // which from the outside looks exactly like the paste not working.
     //
     // Only the rows are redrawn, not the whole screen, so anything already
@@ -1633,6 +1892,10 @@ const app = document.getElementById("app");
 
 function show(code) {
   const machine = findMachine(code);
+
+  // Say where we are. The CSS puts this in capitals, so the words are
+  // written here the way they would be spoken.
+  document.getElementById("brand").textContent = titleFor(code);
 
   // The button in the navy band does one of two jobs. On the front screen it
   // opens the menu; anywhere else it is the way back. Same place, same size,
@@ -1798,14 +2061,79 @@ function show(code) {
           <textarea class="finput" id="reqWhat" rows="3"
                     placeholder="Size, type, and what it's for"></textarea>
 
-          <label class="flabel" for="reqVendor">Preferred vendor</label>
-          <select class="finput" id="reqVendor">
-            <option>No preference</option>
-            ${VENDORS.map(v => `<option>${v}</option>`).join("")}
-          </select>
+          ${vendorBlock("reqVendor", "Preferred vendor",
+                        `<option>No preference</option>`)}
 
           <p class="warn-text" id="reqWarn"></p>
           <button class="btn" data-sendrequest>Send request</button>
+        </div>`}`;
+
+  } else if (code === SERVICE) {
+    // Something on site is broken. This is the operator or the foreman
+    // saying so, and it lands as an email as well as a row, because a fault
+    // sitting unread in a spreadsheet is a machine standing still.
+    const lastName    = localStorage.getItem(LAST_NAME) || "";
+    const lastProject = localStorage.getItem(LAST_PROJ) || "";
+    const lastPlace   = localStorage.getItem(LAST_PLACE) || "";
+
+    app.innerHTML = `
+      ${serviceSent ? `
+        <div class="card recorded">
+          <p class="who">Service request sent</p>
+          <p class="sub">${serviceSent.unit ? "Unit #" + serviceSent.unit
+                                            : "Serial #" + serviceSent.serial}
+          &middot; ${serviceSent.vendor}</p>
+          <p class="sub">${serviceSent.project} &middot; ${serviceSent.place}
+          &middot; ${serviceSent.name}</p>
+          <p class="sub"><span class="flag">${serviceSent.fault}</span></p>
+        </div>` : `
+        <div class="card form">
+          <label class="flabel" for="svcName">Your name</label>
+          <input class="finput" id="svcName" type="text" value="${lastName}"
+                 placeholder="First and last" autocomplete="off"
+                 autocapitalize="words" spellcheck="false">
+
+          <label class="flabel" for="svcProject">Project</label>
+          <select class="finput" id="svcProject">
+            ${PROJECTS.map(p => `
+              <option ${p === lastProject ? "selected" : ""}>${p}</option>
+            `).join("")}
+          </select>
+
+          <!-- Typed, not picked off the register. The lift being reported is
+               often one nobody can get a tag or a screen near, and a list to
+               scroll is the wrong tool when you are reading a sticker.
+
+               Either number will do and one of them has to be there. The unit
+               number is what everybody works from day to day, but the machine
+               whose sticker has fallen off is exactly the machine somebody is
+               standing in front of trying to report, so the serial is the way
+               through rather than a dead end. -->
+          <label class="flabel" for="svcUnit">Unit #</label>
+          <input class="finput" id="svcUnit" type="text"
+                 placeholder="The big number sticker on the equipment"
+                 autocomplete="off" autocapitalize="characters" spellcheck="false">
+
+          <label class="flabel" for="svcSerial">Serial #
+            <span class="opt">only if there is no unit number</span></label>
+          <input class="finput" id="svcSerial" type="text"
+                 placeholder="Stamped on the machine's plate"
+                 autocomplete="off" autocapitalize="characters" spellcheck="false">
+
+          ${locationBlock("svcWhere", lastPlace)}
+
+          <!-- No "no preference" here, unlike asking for equipment. This is
+               the company that gets phoned, so leaving it blank just moves
+               the work back to whoever reads the email. -->
+          ${vendorBlock("svcVendor", "Vendor",
+                        `<option value="">Which vendor?</option>`)}
+
+          <label class="flabel" for="svcFault">What's wrong?</label>
+          <textarea class="finput" id="svcFault" rows="4"
+                    placeholder="Describe what's wrong"></textarea>
+
+          <p class="warn-text" id="svcWarn"></p>
+          <button class="btn" data-sendservice>Send service request</button>
         </div>`}`;
 
   } else if (code === CLAIM) {
@@ -1862,11 +2190,8 @@ function show(code) {
           ${PROJECTS.map(j => `<option>${j}</option>`).join("")}
         </select>
 
-        <label class="flabel" for="inVendor">Vendor</label>
-        <select class="finput" id="inVendor">
-          <option value="">Choose one</option>
-          ${VENDORS.map(v => `<option>${v}</option>`).join("")}
-        </select>
+        ${vendorBlock("inVendor", "Vendor",
+                      `<option value="">Choose one</option>`)}
 
         <label class="flabel" for="inUnit">Unit #</label>
         <input class="finput" id="inUnit" type="text" autocomplete="off"
@@ -1910,6 +2235,13 @@ function show(code) {
     // Every lift on the job, searchable. This is the office's way in, and
     // the way to reach a machine whose tag is damaged.
     app.innerHTML = `
+      <!-- Says what the list is BEFORE anybody searches it and comes up
+           empty. The button says equipment because that is what it will be;
+           today it holds lifts and buggies and nothing else, and a man
+           hunting for a welder should learn that here rather than
+           concluding the app is broken. -->
+      <p class="count">Lifts and buggies only for now — nothing else is in the system yet.</p>
+
       <select class="find" id="jobFilter">
         <option value="">Sort by Job #</option>
         <option value="ALL">All Jobs</option>
@@ -1950,7 +2282,19 @@ function show(code) {
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h11"/>
         </svg>
-        ALL LIFTS
+        ALL EQUIPMENT
+      </button>
+
+      <!-- Red, and above the two navy bars, because a broken machine is
+           urgent in a way that asking for another one is not. Deliberately
+           reachable WITHOUT scanning: the tag is frequently the thing you
+           cannot get to - a lift dead in a corner, a tag torn off - and a man
+           standing next to it should not have to hunt for a way to say so. -->
+      <button class="btn red" data-service>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z"/>
+        </svg>
+        SERVICE REQUEST
       </button>
 
       <button class="btn navy" data-intake>
@@ -1958,15 +2302,15 @@ function show(code) {
           <rect x="4" y="4" width="16" height="16" rx="3"/>
           <path d="M12 9v6"/><path d="M9 12h6"/>
         </svg>
-        ADD EQUIPMENT
+        ADD EQUIPMENT TAG
       </button>
 
-      <button class="btn navy" data-request>
+      <button class="btn grey" data-request>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M7 4h10l3 3v13H7z"/><path d="M17 4v3h3"/>
           <path d="M10 12h6"/><path d="M10 16h4"/>
         </svg>
-        SUBMIT EQUIPMENT REQUEST
+        NEW EQUIPMENT REQUEST
       </button>`;
 
   } else if (!machine) {
@@ -2020,7 +2364,7 @@ function show(code) {
           <div class="row unit">
             <span class="k">Unit #:</span>
             <span class="v mono">${machine.unit}</span>
-            <span class="hint">The vendor's sticker number</span>
+            <span class="hint">The big number sticker on it</span>
           </div>
           <div class="row serial">
             <span class="k">Serial #:</span>
@@ -2165,9 +2509,19 @@ function useBlock(machine) {
         `).join("")}
       </select>
 
-      <label class="flabel" for="where">Location</label>
-      <select class="finput" id="where">
-        ${locationOptions(lastPlace)}
+      ${locationBlock("where", lastPlace)}
+
+      <!-- Asked before condition on purpose. What state a machine is in is a
+           different question depending on whether anybody actually looked at
+           it, and the order the questions come in is what makes that obvious.
+
+           Starts at No. A pre-filled Yes is a signature nobody gave, and the
+           whole value of this field is that it is only worth having if it is
+           true. -->
+      <label class="flabel" for="inspection">Inspection Performed?</label>
+      <select class="finput" id="inspection">
+        <option>No</option>
+        <option>Yes</option>
       </select>
 
       <label class="flabel" for="condition">Condition</label>
@@ -2183,7 +2537,7 @@ function useBlock(machine) {
       <div id="faultWrap" ${condNow === NEEDS_DETAIL ? "" : "hidden"}>
         <label class="flabel" for="fault">What's wrong with it?</label>
         <textarea class="finput" id="fault" rows="3"
-                  placeholder="Enough that someone could bring the right part">${noteNow}</textarea>
+                  placeholder="Describe what's wrong">${noteNow}</textarea>
         <p class="warn-text" id="faultWarn"></p>
       </div>
 
@@ -2245,10 +2599,37 @@ const INTAKE    = "__intake__";
 const ALREADY   = "__already__";
 const CLAIM     = "__claim__";
 const REQUEST   = "__request__";
+const SERVICE   = "__service__";
 const MENU      = "__menu__";
 const PENDING   = "__pending__";
 const RECENT    = "__recent__";
 const SUPPORT   = "__support__";
+
+// What the navy bar says on each screen.
+//
+// A form with no title is just a column of fields, and every form in here
+// looks like every other one at a glance - name, a dropdown, a box. The bar
+// is already at the top of the screen and already reads as a heading, so it
+// does the job without costing a line.
+//
+// Anything not listed keeps the app's own name: the front screen, and a
+// machine's own screen, which is already headed by the machine.
+const SCREEN_TITLES = {
+  [ALL_LIFTS]: "All equipment",
+  [SERVICE]:   "Service request",
+  [INTAKE]:    "Add equipment tag",
+  [CLAIM]:     "Add equipment tag",
+  [ALREADY]:   "Add equipment tag",
+  [REQUEST]:   "New equipment request",
+  [MENU]:      "Menu",
+  [PENDING]:   "Pending uploads",
+  [RECENT]:    "Recorded equipment",
+  [SUPPORT]:   "Support"
+};
+
+function titleFor(code) {
+  return SCREEN_TITLES[code] || "Equipment Register";
+}
 
 // The tag being registered, set by the scan that starts intake.
 let intakeCode = "";
@@ -2262,6 +2643,9 @@ let claimCode = "";
 // The equipment request just sent, so the screen can confirm it.
 let requestSent = null;
 
+// The service request just sent, same idea.
+let serviceSent = null;
+
 // The machine just added, so the front screen can confirm it.
 let justAdded = null;
 
@@ -2274,6 +2658,46 @@ const VENDORS = [
   "Opifex", "Texas First", "United Rentals", "Sunstate", "Equipment Share"
 ];
 
+// The vendor field: the dropdown, and the box that appears when the company
+// is not one of ours.
+//
+// Same shape as locationBlock, and there for the same reason — this is on
+// three screens now, and three copies of a list would drift.
+//
+// The first option differs by screen: asking for equipment allows no
+// preference, a service request insists on somebody to phone, and intake
+// wants the company the machine actually came from. So it is passed in.
+function vendorBlock(field, label, first) {
+  return `
+    <label class="flabel" for="${field}">${label}</label>
+    <select class="finput" id="${field}">
+      ${first}
+      ${VENDORS.map(v => `<option>${v}</option>`).join("")}
+      <option>${OTHER}</option>
+    </select>
+
+    <div id="${field}OtherWrap" hidden>
+      <label class="flabel" for="${field}Other">Which company?</label>
+      <input class="finput" id="${field}Other" type="text"
+             placeholder="The company's name" autocomplete="off"
+             autocapitalize="words">
+      <p class="warn-text" id="${field}OtherWarn"></p>
+    </div>`;
+}
+
+
+// What the vendor field actually says: the company picked, or the one typed
+// into the box when it was not on the list.
+function vendorFrom(field) {
+  const picker = document.getElementById(field);
+  if (!picker) return "";
+  if (picker.value !== OTHER) return picker.value;
+
+  const box = document.getElementById(field + "Other");
+  return box ? box.value.trim() : "";
+}
+
+
 // How many screens deep into the app we are, so Back knows whether there is
 // anywhere to go back to.
 let depth = 0;
@@ -2281,6 +2705,7 @@ let depth = 0;
 function go(code) {
   justSaved = null;     // a receipt belongs to the screen it was shown on
   requestSent = null;
+  serviceSent = null;
   depth++;
 
   // Moving between screens is a fair moment to try the queue again — most
@@ -2293,6 +2718,7 @@ function go(code) {
                 : code === PENDING  ? "?pending=1"
                 : code === RECENT   ? "?recent=1"
                 : code === REQUEST  ? "?request=1"
+                : code === SERVICE  ? "?service=1"
                 : code === ALREADY  ? "?known=1"
                 : code === CLAIM    ? "?claim=1"
                 : code === INTAKE   ? "?new=1"
@@ -2362,7 +2788,7 @@ function drawClaimList() {
       `).join("")}
     </div>`
   : `<p class="lede">Nothing matches. If this lift has never been in the
-     register at all, go back and use ADD EQUIPMENT instead.</p>`;
+     register at all, go back and use ADD EQUIPMENT TAG instead.</p>`;
 }
 
 
@@ -2447,7 +2873,7 @@ function drawLifts() {
     <p class="count">${found.length} ${found.length === 1 ? "lift" : "lifts"}
     &middot; ${registerAge()}</p>
     ${all.length ? "" : `<p class="lede">The register is empty. Add machines in the
-      Machines tab of the sheet, or tag one with ADD EQUIPMENT.</p>`}
+      Machines tab of the sheet, or tag one with ADD EQUIPMENT TAG.</p>`}
     <div class="list">
       ${found.map(m => `
         <a href="?id=${keyOf(m)}" data-go="${keyOf(m)}">
@@ -2628,7 +3054,7 @@ function look() {
         return;
       }
       // Something scanned, but not one of ours. Keep looking.
-      scanmsg.textContent = "That isn't a Lift Register tag.";
+      scanmsg.textContent = "That isn't an Equipment Register tag.";
     }
   }
 
@@ -2777,6 +3203,16 @@ document.addEventListener("click", event => {
     show(PENDING);
   }
 
+  if (event.target.closest("[data-service]")) {
+    event.preventDefault();
+    go(SERVICE);
+  }
+
+  if (event.target.closest("[data-sendservice]")) {
+    event.preventDefault();
+    sendService();
+  }
+
   if (event.target.closest("[data-sendrequest]")) {
     event.preventDefault();
     sendRequest();
@@ -2820,6 +3256,17 @@ document.addEventListener("change", event => {
     if (!wrap.hidden) document.getElementById("fault").focus();
   }
 
+  // Any dropdown that has an Other box built under it — location on two
+  // screens, vendor on three. Written once against the naming rather than
+  // once per field, so adding the next one is a call to the block and
+  // nothing here.
+  const otherWrap = document.getElementById(event.target.id + "OtherWrap");
+
+  if (otherWrap) {
+    otherWrap.hidden = event.target.value !== OTHER;
+    if (!otherWrap.hidden) document.getElementById(event.target.id + "Other").focus();
+  }
+
   // Asking for a call off comes with somewhere to put the machine.
   if (event.target.id === "jobFilter") drawLifts();
 
@@ -2830,7 +3277,8 @@ document.addEventListener("change", event => {
 
 document.getElementById("cancel").addEventListener("click", closeScanner);
 
-document.getElementById("version").textContent = APP_VERSION;
+document.getElementById("version").textContent =
+  APP_VERSION + (IS_TEST ? " · TEST" : "");
 
 
 // ---------------------------------------------------------------------------
@@ -2918,6 +3366,7 @@ async function sendAll() {
   await sendLifts();
   await pushClaims();
   await pushRequests();
+  await pushServices();
   await pushSupport();
 }
 
@@ -2962,6 +3411,7 @@ function pendingCount() {
          readLocalMachines().filter(lift => !lift.sent).length +
          readClaims().filter(claim => !claim.sent).length +
          readRequests().filter(ask => !ask.sent).length +
+         readServices().filter(ask => !ask.sent).length +
          readSupport().filter(note => !note.sent).length;
 }
 
@@ -3000,7 +3450,9 @@ document.addEventListener("visibilitychange", () => {
   pushRequests();
 });
 
-window.addEventListener("online", () => { sync(); fetchRegister(); fetchUntagged(); pushRequests(); });
+window.addEventListener("online", () => {
+  sync(); fetchRegister(); fetchUntagged(); pushRequests(); pushServices();
+});
 </script>
 </body>
 </html>

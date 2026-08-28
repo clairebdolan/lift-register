@@ -15,7 +15,22 @@
 // The name of the storage container on the phone. Change the version number
 // whenever the file list below changes — the phone treats a new name as a
 // brand new container and throws the old one out.
-const CACHE = "lift-register-v21";
+//
+// There are two copies of this app on one website: the live one everybody
+// has, and the test one in the /test/ folder. Containers are shared across a
+// whole website rather than per folder, so each copy names its own and, just
+// as importantly, only ever throws out its own. Without that, opening the
+// test app would delete the live app's offline files off the phone — and
+// nobody would find out until they were standing in a hall with no signal.
+const IS_TEST = self.location.pathname.includes("/test/");
+
+const MINE  = IS_TEST ? "lift-register-test-" : "lift-register-live-";
+const CACHE = MINE + "v22";
+
+// The single container from before there were two copies. The live app
+// clears it up on its way past; the test app leaves it alone, because on
+// Claire's phone that one belongs to the live app.
+const LEGACY = "lift-register-v21";
 
 // The files the app needs in order to start at all.
 const SHELL = [
@@ -59,7 +74,12 @@ self.addEventListener("activate", event => {
   event.waitUntil(
     caches.keys().then(names =>
       Promise.all(
-        names.filter(name => name !== CACHE).map(name => caches.delete(name))
+        names
+          .filter(name =>
+            (name.startsWith(MINE) && name !== CACHE) ||
+            (!IS_TEST && name === LEGACY)
+          )
+          .map(name => caches.delete(name))
       )
     )
   );
