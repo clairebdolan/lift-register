@@ -758,7 +758,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 74";
+const APP_VERSION = "build 75";
 
 
 // ---------------------------------------------------------------------------
@@ -3429,22 +3429,30 @@ function whenText(iso) {
 
 
 updatePending();
-sync();
+sendAll();
 fetchRegister().then(() => { if (idFromAddress() === ALL_LIFTS) show(ALL_LIFTS); });
 fetchUntagged();
 
 // Try again whenever the app comes back to the front, or the phone finds
 // signal. Between them, walking out of a hall is enough.
+//
+// sendAll(), not a hand-picked few. These three places used to each name
+// their own list of things to retry, and the lists had already drifted apart:
+// coming back to the app retried scans and equipment requests but NOT service
+// requests, new machines, or tags waiting to be claimed. Those sat on the
+// phone until somebody happened to walk back to the front screen.
+//
+// One list, in one place, or the next thing added to the queue is quietly
+// left out of two of them again.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
-  sync();
+  sendAll();
   fetchRegister();
   fetchUntagged();
-  pushRequests();
 });
 
 window.addEventListener("online", () => {
-  sync(); fetchRegister(); fetchUntagged(); pushRequests(); pushServices();
+  sendAll(); fetchRegister(); fetchUntagged();
 });
 </script>
 </body>
