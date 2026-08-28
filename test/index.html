@@ -768,7 +768,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 80";
+const APP_VERSION = "build 81";
 
 
 // ---------------------------------------------------------------------------
@@ -2294,7 +2294,7 @@ function show(code) {
         ${PROJECTS.map(j => `<option>${j}</option>`).join("")}
       </select>
       <input class="find" id="find" type="search" autocomplete="off"
-             placeholder="Unit, serial, or who it's assigned to"
+             placeholder="Search by unit # or serial #"
              autocapitalize="none">
       <div id="lifts"></div>`;
 
