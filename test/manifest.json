@@ -1,6 +1,6 @@
 {
-  "name": "LR TEST",
-  "short_name": "LR TEST",
+  "name": "EQR TEST",
+  "short_name": "EQR TEST",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

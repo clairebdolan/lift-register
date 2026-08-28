@@ -3,15 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lift Register</title>
+<title>Equipment Register</title>
 
-<!-- The home screen icon: LR in white on company navy, cut from the Loenbro
-     wordmark. iOS rounds the corners itself, so the file is a full square.
-     The name under the icon stays "Lift Register". -->
+<!-- The home screen icon: EQR in white on company navy, in the Loenbro
+     wordmark's face. iOS rounds the corners itself, so the file is a full
+     square.
+
+     The label under it is EQR rather than the full name, because iOS cuts a
+     home screen label off at about a dozen characters and "Equipment Regi..."
+     is worse than the three letters on the tile above it.
+
+     The FILE is still called icon-lr-2.png. Nobody sees a filename, and
+     renaming it would mean touching the service worker's file list for no
+     reason anybody could ever notice. -->
 <link rel="apple-touch-icon" href="icon-lr-2.png">
 <link rel="icon" href="icon-lr-2.png">
 <link rel="manifest" href="manifest.json">
-<meta name="apple-mobile-web-app-title" content="Lift Register">
+<meta name="apple-mobile-web-app-title" content="EQR">
 
 <!-- Opens without Safari's address bar and buttons. Newer iOS reads this off
      manifest.json on its own, but older iPads only look at this line — and
@@ -151,7 +159,14 @@
     font-family: "Libre Franklin", "Franklin Gothic Heavy",
                  "Avenir Next Condensed", Arial, sans-serif;
     font-weight: 800;
-    font-size: 21px;
+
+    /* Shrinks on a narrow phone rather than wrapping or running off the
+       edge. The bar carries the screen's name now, and NEW EQUIPMENT REQUEST
+       is twenty-one characters - a good deal longer than the app's own name
+       this was set for. */
+    font-size: clamp(16px, 5vw, 21px);
+    white-space: nowrap;
+
     letter-spacing: 0.01em;
     text-transform: uppercase;
     color: #fff;
@@ -607,7 +622,7 @@
 <div class="wrap">
   <div class="head">
     <button class="menubtn" id="headbtn" data-menu aria-label="Menu">&#9776;</button>
-    <div class="brand" id="brand">Lift Register</div>
+    <div class="brand" id="brand">Equipment Register</div>
   </div>
 
   <!-- Everything below gets filled in by the script at the bottom. -->
@@ -743,7 +758,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 71";
+const APP_VERSION = "build 72";
 
 
 // ---------------------------------------------------------------------------
@@ -778,9 +793,9 @@ if (IS_TEST) {
   // at the moment Add to Home Screen is tapped, so setting it here is worth
   // a try; if that phone ignores it, the orange icon still says which is
   // which, which is why the icon differs too.
-  document.title = "LR TEST";
+  document.title = "EQR TEST";
   const appleName = document.querySelector('meta[name="apple-mobile-web-app-title"]');
-  if (appleName) appleName.content = "LR TEST";
+  if (appleName) appleName.content = "EQR TEST";
 }
 
 
@@ -2613,7 +2628,7 @@ const SCREEN_TITLES = {
 };
 
 function titleFor(code) {
-  return SCREEN_TITLES[code] || "Lift Register";
+  return SCREEN_TITLES[code] || "Equipment Register";
 }
 
 // The tag being registered, set by the scan that starts intake.
@@ -3039,7 +3054,7 @@ function look() {
         return;
       }
       // Something scanned, but not one of ours. Keep looking.
-      scanmsg.textContent = "That isn't a Lift Register tag.";
+      scanmsg.textContent = "That isn't an Equipment Register tag.";
     }
   }
 
