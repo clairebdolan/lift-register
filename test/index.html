@@ -768,7 +768,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 82";
+const APP_VERSION = "build 83";
 
 
 // ---------------------------------------------------------------------------
@@ -1570,6 +1570,7 @@ function idFromAddress() {
   if (params.get("recent")) return RECENT;
   if (params.get("request")) return REQUEST;
   if (params.get("service")) return SERVICE;
+  if (params.get("mine")) return MINE;
   if (params.get("known")) return ALREADY;
   if (params.get("claim")) return CLAIM;
   if (params.get("new")) return INTAKE;
@@ -1774,7 +1775,11 @@ let fetchingRegister = false;
 // new data lands, so a list drawn before the data arrived fixes itself
 // instead of sitting there looking empty.
 function refreshLists() {
-  if (document.getElementById("lifts")) drawLifts();
+  if (!document.getElementById("lifts")) return;
+
+  // Same container id, two different screens drawing into it.
+  if (document.getElementById("mineName")) drawMine();
+  else if (document.getElementById("jobFilter")) drawLifts();
 }
 
 // Go and get the register, and keep the screen honest while it happens.
@@ -2112,6 +2117,21 @@ function show(code) {
           <button class="btn" data-sendrequest>Send request</button>
         </div>`}`;
 
+  } else if (code === MINE) {
+    // The name is remembered on this phone, so this is one tap after the
+    // first time.
+    const mine = localStorage.getItem(MY_NAME) ||
+                 localStorage.getItem(LAST_NAME) || "";
+
+    app.innerHTML = `
+      <input class="find" id="mineName" type="text" value="${mine}"
+             placeholder="Your name" autocomplete="off"
+             autocapitalize="words" spellcheck="false">
+      <div id="lifts"></div>`;
+
+    drawMine();
+    refreshRegister();
+
   } else if (code === SERVICE) {
     // Something on site is broken. This is the operator or the foreman
     // saying so, and it lands as an email as well as a row, because a fault
@@ -2343,6 +2363,14 @@ function show(code) {
            reachable WITHOUT scanning: the tag is frequently the thing you
            cannot get to - a lift dead in a corner, a tag torn off - and a man
            standing next to it should not have to hunt for a way to say so. -->
+      <button class="btn navy" data-mine>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="8" r="3.4"/>
+          <path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"/>
+        </svg>
+        MY EQUIPMENT
+      </button>
+
       <button class="btn red" data-service>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z"/>
@@ -2658,6 +2686,7 @@ const ALREADY   = "__already__";
 const CLAIM     = "__claim__";
 const REQUEST   = "__request__";
 const SERVICE   = "__service__";
+const MINE      = "__mine__";
 const MENU      = "__menu__";
 const PENDING   = "__pending__";
 const RECENT    = "__recent__";
@@ -2674,6 +2703,7 @@ const SUPPORT   = "__support__";
 // machine's own screen, which is already headed by the machine.
 const SCREEN_TITLES = {
   [ALL_LIFTS]: "All equipment",
+  [MINE]:      "My equipment",
   [SERVICE]:   "Service request",
   [INTAKE]:    "Add equipment tag",
   [CLAIM]:     "Add equipment tag",
@@ -2777,6 +2807,7 @@ function go(code) {
                 : code === RECENT   ? "?recent=1"
                 : code === REQUEST  ? "?request=1"
                 : code === SERVICE  ? "?service=1"
+                : code === MINE     ? "?mine=1"
                 : code === ALREADY  ? "?known=1"
                 : code === CLAIM    ? "?claim=1"
                 : code === INTAKE   ? "?new=1"
@@ -2903,6 +2934,45 @@ function attachTag(key) {
 // The rows on the all-lifts screen. Drawn separately from the screen itself
 // so typing in the search box redraws the list without touching the box —
 // otherwise the keyboard closes on every letter.
+// Why the register has nothing in it, in the words that fit the actual
+// reason. Shared, because two screens now draw a list of machines and both
+// of them can be opened on a phone that has not got the register yet.
+//
+// "The register is empty" is a claim about the SHEET. Saying it when the
+// phone simply could not reach the sheet sends somebody off to stare at a
+// spreadsheet that is perfectly fine.
+//
+// REGISTER_AT is only written on a fetch that worked, so its absence is the
+// honest test for "this phone has never managed to ask".
+function emptyRegisterNote() {
+  const everGot = Boolean(localStorage.getItem(REGISTER_AT));
+
+  return fetchingRegister
+      ? `<p class="lede">Fetching the register…</p>`
+    : !navigator.onLine
+      ? `<p class="lede">No signal, and this phone hasn't got the register
+         yet. It will fill in on its own the moment there's a bar.</p>`
+    : !everGot
+      ? `<p class="lede">Couldn't reach the sheet just now. It keeps trying
+         on its own — this will fill in when it gets through.</p>`
+      : `<p class="lede">The register is empty. Add machines in the Machines
+         tab of the sheet, or tag one with ADD EQUIPMENT TAG.</p>`;
+}
+
+
+// One machine, as a row. Drawn from one function so the two lists cannot
+// drift into showing different things about the same machine.
+function machineRow(m) {
+  return `
+    <a href="?id=${keyOf(m)}" data-go="${keyOf(m)}">
+      <span>
+        <span class="lbl">${m.desc}</span><br>
+        <span class="sub">Vendor: ${m.vendor}<br>Unit #${m.unit}<br>Job #: ${m.job}<br>Assigned to: ${m.assignedTo || ""}${m.qr ? "" : "<br>No tag on it yet"}${onlyOnThisPhone(m.qr) ? "<br>On this phone only" : ""}</span>
+      </span>
+    </a>`;
+}
+
+
 function drawLifts() {
   const needle = (document.getElementById("find").value || "").trim().toLowerCase();
   const job    = document.getElementById("jobFilter").value;
@@ -2915,26 +2985,7 @@ function drawLifts() {
   // job", so somebody picks the job again to be sure, and decides the app is
   // broken. Say which of the three it actually is.
   if (!all.length) {
-    // Four different things, and they were all showing the same sentence.
-    // "The register is empty" is a claim about the SHEET; saying it when the
-    // phone simply could not reach the sheet sends somebody to go and look at
-    // a spreadsheet that is perfectly fine.
-    //
-    // REGISTER_AT is only written on a fetch that worked, so its absence is
-    // the honest test for "this phone has never managed to ask".
-    const everGot = Boolean(localStorage.getItem(REGISTER_AT));
-
-    document.getElementById("lifts").innerHTML =
-      fetchingRegister
-        ? `<p class="lede">Fetching the register…</p>`
-      : !navigator.onLine
-        ? `<p class="lede">No signal, and this phone hasn't got the register
-           yet. It will fill in on its own the moment there's a bar.</p>`
-      : !everGot
-        ? `<p class="lede">Couldn't reach the sheet just now. It keeps trying
-           on its own — this will fill in when it gets through.</p>`
-        : `<p class="lede">The register is empty. Add machines in the Machines
-           tab of the sheet, or tag one with ADD EQUIPMENT TAG.</p>`;
+    document.getElementById("lifts").innerHTML = emptyRegisterNote();
     return;
   }
 
@@ -2968,17 +3019,57 @@ function drawLifts() {
   document.getElementById("lifts").innerHTML = `
     <p class="count">${found.length} ${found.length === 1 ? "lift" : "lifts"}
     &middot; ${registerAge()}</p>
-    <div class="list">
-      ${found.map(m => `
-        <a href="?id=${keyOf(m)}" data-go="${keyOf(m)}">
-          <span>
-            <span class="lbl">${m.desc}</span><br>
-            <span class="sub">Vendor: ${m.vendor}<br>Unit #${m.unit}<br>Job #: ${m.job}<br>Assigned to: ${m.assignedTo || ""}${m.qr ? "" : "<br>No tag on it yet"}${onlyOnThisPhone(m.qr) ? "<br>On this phone only" : ""}</span>
-          </span>
-        </a>
-      `).join("")}
-    </div>
+    <div class="list">${found.map(machineRow).join("")}</div>
     ${found.length ? "" : `<p class="lede">Nothing matches.</p>`}`;
+}
+
+
+// ---------------------------------------------------------------------------
+// WHAT I AM RESPONSIBLE FOR
+//
+// A foreman's way in. He types his name once and the phone remembers it, so
+// every time after that it is one tap from the front screen to the list of
+// machines that are his problem.
+//
+// Typing rather than picking from a list of names on purpose. Assignment is
+// free text written by whoever filled the sheet in, so one crew ends up
+// written as "Ramirez", "ramirez crew" and "J. Ramirez". Matching on part of
+// the name finds all three; a tidy dropdown of exact names would find one of
+// them and look right while doing it.
+// ---------------------------------------------------------------------------
+
+const MY_NAME = KEY + "myname";
+
+function drawMine() {
+  const box  = document.getElementById("mineName");
+  const name = (box.value || "").trim();
+  const list = document.getElementById("lifts");
+
+  localStorage.setItem(MY_NAME, name);
+
+  const all = register();
+
+  if (!all.length) {
+    list.innerHTML = emptyRegisterNote();
+    return;
+  }
+
+  if (!name) {
+    list.innerHTML = `
+      <p class="lede">Put your name in to see the equipment assigned to you.</p>`;
+    return;
+  }
+
+  const needle = name.toLowerCase();
+  const found  = all.filter(m => (m.assignedTo || "").toLowerCase().includes(needle));
+
+  list.innerHTML = `
+    <p class="count">${found.length}
+    ${found.length === 1 ? "machine" : "machines"} assigned to ${name}
+    &middot; ${registerAge()}</p>
+    <div class="list">${found.map(machineRow).join("")}</div>
+    ${found.length ? "" : `<p class="lede">Nothing is assigned to ${name} yet.
+      Check the spelling, or ask the office to assign it.</p>`}`;
 }
 
 // Draw whatever the address bar says, now and whenever the back button moves.
@@ -3297,6 +3388,11 @@ document.addEventListener("click", event => {
     show(PENDING);
   }
 
+  if (event.target.closest("[data-mine]")) {
+    event.preventDefault();
+    go(MINE);
+  }
+
   if (event.target.closest("[data-service]")) {
     event.preventDefault();
     go(SERVICE);
@@ -3339,6 +3435,7 @@ document.addEventListener("click", event => {
 // Typing in the search box on the all-lifts screen.
 document.addEventListener("input", event => {
   if (event.target.id === "find") drawLifts();
+  if (event.target.id === "mineName") drawMine();
   if (event.target.id === "claimfind") drawClaimList();
 });
 
