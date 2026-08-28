@@ -768,7 +768,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 78";
+const APP_VERSION = "build 79";
 
 
 // ---------------------------------------------------------------------------
@@ -2401,9 +2401,11 @@ function show(code) {
             ${machine.qr ? "" : `<span class="pill calledoff">No tag yet</span>`}
             ${hasPO(machine) ? `<span class="pill po">PO ${machine.po}</span>` : ""}
           </div>
-          ${machine.assignedTo
-            ? `<p class="assigned">Assigned to: <strong>${machine.assignedTo}</strong></p>`
-            : ""}
+          <!-- Always shown, even when nobody has it. A line that is missing
+               reads as "nothing to say here"; a line that is blank reads as
+               a gap waiting to be filled, which is the point - it is how the
+               machines still needing somebody put against them stand out. -->
+          <p class="assigned">Assigned to: <strong>${machine.assignedTo || ""}</strong></p>
         </div>
         ${photoBlock(machine)}
         <dl>
@@ -2962,7 +2964,7 @@ FROM
         <a href="?id=${keyOf(m)}" data-go="${keyOf(m)}">
           <span>
             <span class="lbl">${m.desc}</span><br>
-            <span class="sub">Vendor: ${m.vendor}<br>Unit #${m.unit}<br>Job #: ${m.job}${m.assignedTo ? "<br>Assigned to: " + m.assignedTo : ""}${m.qr ? "" : "<br>No tag on it yet"}${onlyOnThisPhone(m.qr) ? "<br>On this phone only" : ""}</span>
+            <span class="sub">Vendor: ${m.vendor}<br>Unit #${m.unit}<br>Job #: ${m.job}<br>Assigned to: ${m.assignedTo || ""}${m.qr ? "" : "<br>No tag on it yet"}${onlyOnThisPhone(m.qr) ? "<br>On this phone only" : ""}</span>
           </span>
         </a>
       `).join("")}
