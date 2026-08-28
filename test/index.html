@@ -607,7 +607,7 @@
 <div class="wrap">
   <div class="head">
     <button class="menubtn" id="headbtn" data-menu aria-label="Menu">&#9776;</button>
-    <div class="brand">Lift Register</div>
+    <div class="brand" id="brand">Lift Register</div>
   </div>
 
   <!-- Everything below gets filled in by the script at the bottom. -->
@@ -743,7 +743,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 70";
+const APP_VERSION = "build 71";
 
 
 // ---------------------------------------------------------------------------
@@ -1420,6 +1420,7 @@ function sendService() {
     name:    val("svcName"),
     project: document.getElementById("svcProject").value,
     unit:    val("svcUnit"),
+    serial:  val("svcSerial"),
     place:   placeFrom("svcWhere"),
     vendor:  vendorFrom("svcVendor"),
     fault:   val("svcFault"),
@@ -1433,8 +1434,11 @@ function sendService() {
     return;
   }
 
-  if (!ask.unit) {
-    warn.textContent = "Which unit is it? The number off the vendor's sticker.";
+  // One of the two, not both. Insisting on the unit number would turn the
+  // machine with no sticker into the one machine nobody can report.
+  if (!ask.unit && !ask.serial) {
+    warn.textContent =
+      "Put in the unit number — or the serial number, if there is no unit number on it.";
     return;
   }
 
@@ -1874,6 +1878,10 @@ const app = document.getElementById("app");
 function show(code) {
   const machine = findMachine(code);
 
+  // Say where we are. The CSS puts this in capitals, so the words are
+  // written here the way they would be spoken.
+  document.getElementById("brand").textContent = titleFor(code);
+
   // The button in the navy band does one of two jobs. On the front screen it
   // opens the menu; anywhere else it is the way back. Same place, same size,
   // so the thumb learns one target.
@@ -2057,7 +2065,9 @@ function show(code) {
       ${serviceSent ? `
         <div class="card recorded">
           <p class="who">Service request sent</p>
-          <p class="sub">Unit #${serviceSent.unit} &middot; ${serviceSent.vendor}</p>
+          <p class="sub">${serviceSent.unit ? "Unit #" + serviceSent.unit
+                                            : "Serial #" + serviceSent.serial}
+          &middot; ${serviceSent.vendor}</p>
           <p class="sub">${serviceSent.project} &middot; ${serviceSent.place}
           &middot; ${serviceSent.name}</p>
           <p class="sub"><span class="flag">${serviceSent.fault}</span></p>
@@ -2077,10 +2087,22 @@ function show(code) {
 
           <!-- Typed, not picked off the register. The lift being reported is
                often one nobody can get a tag or a screen near, and a list to
-               scroll is the wrong tool when you are reading a sticker. -->
+               scroll is the wrong tool when you are reading a sticker.
+
+               Either number will do and one of them has to be there. The unit
+               number is what everybody works from day to day, but the machine
+               whose sticker has fallen off is exactly the machine somebody is
+               standing in front of trying to report, so the serial is the way
+               through rather than a dead end. -->
           <label class="flabel" for="svcUnit">Unit #</label>
           <input class="finput" id="svcUnit" type="text"
-                 placeholder="The number on the vendor's sticker"
+                 placeholder="The big number sticker on the equipment"
+                 autocomplete="off" autocapitalize="characters" spellcheck="false">
+
+          <label class="flabel" for="svcSerial">Serial #
+            <span class="opt">only if there is no unit number</span></label>
+          <input class="finput" id="svcSerial" type="text"
+                 placeholder="Stamped on the machine's plate"
                  autocomplete="off" autocapitalize="characters" spellcheck="false">
 
           ${locationBlock("svcWhere", lastPlace)}
@@ -2093,7 +2115,7 @@ function show(code) {
 
           <label class="flabel" for="svcFault">What's wrong?</label>
           <textarea class="finput" id="svcFault" rows="4"
-                    placeholder="Enough that someone could bring the right part"></textarea>
+                    placeholder="Describe what's wrong"></textarea>
 
           <p class="warn-text" id="svcWarn"></p>
           <button class="btn" data-sendservice>Send service request</button>
@@ -2327,7 +2349,7 @@ function show(code) {
           <div class="row unit">
             <span class="k">Unit #:</span>
             <span class="v mono">${machine.unit}</span>
-            <span class="hint">The vendor's sticker number</span>
+            <span class="hint">The big number sticker on it</span>
           </div>
           <div class="row serial">
             <span class="k">Serial #:</span>
@@ -2500,7 +2522,7 @@ function useBlock(machine) {
       <div id="faultWrap" ${condNow === NEEDS_DETAIL ? "" : "hidden"}>
         <label class="flabel" for="fault">What's wrong with it?</label>
         <textarea class="finput" id="fault" rows="3"
-                  placeholder="Enough that someone could bring the right part">${noteNow}</textarea>
+                  placeholder="Describe what's wrong">${noteNow}</textarea>
         <p class="warn-text" id="faultWarn"></p>
       </div>
 
@@ -2567,6 +2589,32 @@ const MENU      = "__menu__";
 const PENDING   = "__pending__";
 const RECENT    = "__recent__";
 const SUPPORT   = "__support__";
+
+// What the navy bar says on each screen.
+//
+// A form with no title is just a column of fields, and every form in here
+// looks like every other one at a glance - name, a dropdown, a box. The bar
+// is already at the top of the screen and already reads as a heading, so it
+// does the job without costing a line.
+//
+// Anything not listed keeps the app's own name: the front screen, and a
+// machine's own screen, which is already headed by the machine.
+const SCREEN_TITLES = {
+  [ALL_LIFTS]: "All equipment",
+  [SERVICE]:   "Service request",
+  [INTAKE]:    "Add equipment tag",
+  [CLAIM]:     "Add equipment tag",
+  [ALREADY]:   "Add equipment tag",
+  [REQUEST]:   "New equipment request",
+  [MENU]:      "Menu",
+  [PENDING]:   "Pending uploads",
+  [RECENT]:    "Recorded equipment",
+  [SUPPORT]:   "Support"
+};
+
+function titleFor(code) {
+  return SCREEN_TITLES[code] || "Lift Register";
+}
 
 // The tag being registered, set by the scan that starts intake.
 let intakeCode = "";
