@@ -231,15 +231,25 @@
     gap: 4px 10px;
   }
 
-  /* Deliberately quiet. Nobody standing at a lift needs the PO — it is what
-     makes this machine reconcile against a vendor's invoice weeks later, so
-     it belongs on the screen without competing with anything on it. */
-  .po {
+  /* The PO, now a pill like the status beside it.
+     Navy rather than green on purpose: green already means ON RENT on this
+     line, and two greens sitting together that mean different things is
+     worse than no highlight at all. Same shape, its own colour. */
+  .pill.po {
+    background: #DEE7F1;
+    color: var(--navy);
     font-family: var(--mono);
-    font-size: 12px;
     letter-spacing: 0.02em;
+  }
+
+  /* Who has the machine. Under the pills, in the quiet grey the PO used to
+     have - it is worth knowing, but it is not the machine's status. */
+  .assigned {
+    margin: 7px 0 0;
+    font-size: 12px;
     color: var(--ink-3);
   }
+  .assigned strong { font-weight: 600; color: var(--ink-2); }
 
   dl { margin: 0; }
 
@@ -758,7 +768,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 76";
+const APP_VERSION = "build 77";
 
 
 // ---------------------------------------------------------------------------
@@ -1097,6 +1107,7 @@ async function addLift() {
     unit:   val("inUnit"),
     serial: val("inSerial"),
     po:     val("inPo"),          // may be blank
+    assignedTo: val("inAssigned"),   // may be blank
     desc:   val("inDesc"),
     onRent: val("inDate"),
     addedBy: val("inName"),
@@ -2236,6 +2247,15 @@ function show(code) {
                autocapitalize="characters" spellcheck="false"
                placeholder="Stamped on the machine's plate">
 
+        <!-- Who the machine belongs to on site. Optional, and the only other
+             place it can be set is the sheet - a scan never asks, because the
+             man scanning it is not the man who decides whose it is. -->
+        <label class="flabel" for="inAssigned">Assigned to
+          <span class="opt">optional</span></label>
+        <input class="finput" id="inAssigned" type="text"
+               placeholder="Crew, foreman, or contractor" autocomplete="off"
+               autocapitalize="words">
+
         <label class="flabel" for="inPo">PO # <span class="opt">optional</span></label>
         <input class="finput" id="inPo" type="text" autocomplete="off"
                autocapitalize="characters" spellcheck="false"
@@ -2379,8 +2399,11 @@ function show(code) {
           <div class="statusline">
             <span class="pill ${statusOf(machine)}">${STATUS_LABEL[statusOf(machine)]}</span>
             ${machine.qr ? "" : `<span class="pill calledoff">No tag yet</span>`}
-            ${hasPO(machine) ? `<span class="po">PO ${machine.po}</span>` : ""}
+            ${hasPO(machine) ? `<span class="pill po">PO ${machine.po}</span>` : ""}
           </div>
+          ${machine.assignedTo
+            ? `<p class="assigned">Assigned to: <strong>${machine.assignedTo}</strong></p>`
+            : ""}
         </div>
         ${photoBlock(machine)}
         <dl>
