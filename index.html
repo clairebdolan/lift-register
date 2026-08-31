@@ -817,7 +817,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 86";
+const APP_VERSION = "build 87";
 
 
 // ---------------------------------------------------------------------------
@@ -1923,51 +1923,6 @@ async function fetchUntagged() {
 }
 
 
-// What the job looks like right now, in one line above the buttons.
-//
-// A home screen that only offers you somewhere to go is a menu. This makes
-// opening the app worth something on its own — and the quiet count is the
-// number the whole system exists to move.
-function siteSummary() {
-  const lifts = register();
-  if (!lifts.length) return "";
-
-  // Only the tagged ones. A machine nobody can scan has not gone quiet, it
-  // has never been given a voice — counting those would put the whole yard
-  // in the warning and make the number worth nothing.
-  const tagged = lifts.filter(m => m.qr);
-  const quiet  = tagged.filter(m => daysQuiet(m) >= 7).length;
-
-  // And with nothing tagged, "all scanned this week" is simply untrue — not
-  // one of them can be scanned. Say what is actually holding the job up.
-  const state = !tagged.length
-    ? `&middot; <span class="quiet">none tagged yet</span>`
-    : quiet
-      ? `&middot; <span class="quiet">${quiet} not scanned in 7 days</span>`
-      : "&middot; all scanned this week";
-
-  return `
-    <p class="summary">
-      <strong>${lifts.length}</strong> ${lifts.length === 1 ? "lift" : "lifts"} on site
-      ${state}
-    </p>`;
-}
-
-
-// Days since anyone scanned this machine. A machine nobody has ever scanned
-// counts from the day it went on rent, so one delivered yesterday is not
-// accused of sitting idle.
-function daysQuiet(machine) {
-  const from = machine.lastScan || machine.onRent;
-  if (!from) return 0;
-
-  const when = new Date(from);
-  if (isNaN(when.getTime())) return 0;
-
-  return Math.floor((Date.now() - when.getTime()) / 86400000);
-}
-
-
 // When the register last came down, for the line under the search box.
 function registerAge() {
   const when = localStorage.getItem(REGISTER_AT);
@@ -2389,7 +2344,6 @@ function show(code) {
         <div class="card recorded">
           <p class="who">Unit #: ${added.unit} successfully added to register!</p>
         </div>` : ""}
-      ${siteSummary()}
 
       <button class="btn red first" data-scan>
         <svg viewBox="0 0 24 24" aria-hidden="true">
