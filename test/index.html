@@ -222,6 +222,10 @@
   .pill.calledoff  { background: var(--warn-bg); color: var(--warn); }
   .pill.pickedup   { background: var(--off-bg);  color: var(--off);  }
 
+  /* A status word the app does not recognise. Shown as typed, in a colour
+     that claims nothing about it. */
+  .pill.other      { background: var(--off-bg);  color: var(--off);  }
+
   /* The status, with the PO alongside it. Wraps onto its own line rather than
      squeezing the pill if a long number and a narrow phone ever meet. */
   .statusline {
@@ -638,7 +642,7 @@
   <!-- Everything below gets filled in by the script at the bottom. -->
   <div id="app"></div>
 
-  <footer>Prototype &middot; <span id="version"></span><span id="pending"></span></footer>
+  <footer><span id="version"></span><span id="pending"></span></footer>
 </div>
 
 <!-- The menu. Slides over the left of the screen; the rest of the app stays
@@ -716,8 +720,53 @@ const STATUS_LABEL = {
 // "Active" or "on rent" or "actve". None of those should hide a machine from
 // the field, and none of them should put the word "undefined" on a screen in
 // front of somebody stood at a lift.
+// The status as one word, so the sheet does not have to be typed exactly.
+// Case and spacing are not worth an argument: "Called Off", "called off"
+// and "calledoff" are the same thing.
+function statusKey(machine) {
+  return String(machine.status || "").toLowerCase().replace(/[^a-z]/g, "");
+}
+
+
+// Other ways of writing the same status. The sheet is typed by people, and
+// "on rent" is the obvious way to write what the app calls active - it would
+// be perverse for the plain English version to be the one it does not know.
+const STATUS_ALIAS = {
+  onrent:  "active",
+  release: "calledoff",
+  released: "calledoff",
+  returned: "pickedup",
+  collected: "pickedup"
+};
+
+
 function statusOf(machine) {
-  return STATUS_LABEL[machine.status] ? machine.status : "active";
+  const key = statusKey(machine);
+
+  if (!key) return "active";                      // blank means on rent
+
+  const known = STATUS_ALIAS[key] || key;
+  return STATUS_LABEL[known] ? known : "other";
+}
+
+
+// What the pill says.
+//
+// A status the app has never heard of is shown AS IT WAS TYPED rather than
+// quietly relabelled. This used to fall back to "On rent", so writing "off
+// rent" in the sheet made the machine's own screen say the opposite of what
+// the sheet said - which is worse than not understanding it at all, because
+// it looks like an answer.
+//
+// Falling back was there so a typo could not hide a machine from the field.
+// Showing the word does not hide anything either; it just stops the app
+// putting words in the sheet's mouth.
+function statusText(machine) {
+  const key = statusOf(machine);
+  if (key !== "other") return STATUS_LABEL[key];
+
+  const raw = String(machine.status).trim();
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
 
@@ -768,7 +817,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 84";
+const APP_VERSION = "build 86";
 
 
 // ---------------------------------------------------------------------------
@@ -2426,7 +2475,7 @@ function show(code) {
         <div class="card-top">
           <h1>${machine.desc}</h1>
           <div class="statusline">
-            <span class="pill ${statusOf(machine)}">${STATUS_LABEL[statusOf(machine)]}</span>
+            <span class="pill ${statusOf(machine)}">${statusText(machine)}</span>
             ${machine.qr ? "" : `<span class="pill calledoff">No tag yet</span>`}
             ${hasPO(machine) ? `<span class="pill po">PO ${machine.po}</span>` : ""}
           </div>
