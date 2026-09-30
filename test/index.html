@@ -817,7 +817,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 88";
+const APP_VERSION = "build 89";
 
 
 // ---------------------------------------------------------------------------
@@ -871,13 +871,13 @@ if (IS_TEST) {
 // ---------------------------------------------------------------------------
 
 // Where scans go when the phone has signal. This is the Apps Script attached
-// to Claire's Google Sheet, published so the app can post to it without a
+// to the register sheet (owned by the EQR work Google account since 2026-09-30), published so the app can post to it without a
 // login — which is the whole reason this is on Google and not Microsoft.
 //
 // Two of them: the real register, and a copy of that sheet that only the test
 // app writes to. Test scans and test machines land in the copy, so nothing
 // tried out on the test phone can ever turn up in the real register.
-const LIVE_ENDPOINT = "https://script.google.com/macros/s/AKfycbw8MM_crqCtagSZzM1xXbnSQEhgQg1jc0G1buNIMCbCNa7PQRISLYnbgSVX2SWZmR_0AA/exec";
+const LIVE_ENDPOINT = "https://script.google.com/macros/s/AKfycbyW_dVCY4gwfSYDrmDHFuGQSuCyERfgGm9yjeUQDPI8zloosgN_kSeSNUmFAjl37Ro6/exec";
 
 // The TEST sheet — a copy of the register, deployed 2026-08-27. Only the
 // test app writes here, so a test scan can never land in the real register.

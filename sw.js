@@ -25,7 +25,7 @@
 const IS_TEST = self.location.pathname.includes("/test/");
 
 const MINE  = IS_TEST ? "lift-register-test-" : "lift-register-live-";
-const CACHE = MINE + "v22";
+const CACHE = MINE + "v23";
 
 // The single container from before there were two copies. The live app
 // clears it up on its way past; the test app leaves it alone, because on
