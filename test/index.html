@@ -817,7 +817,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 89";
+const APP_VERSION = "build 90";
 
 
 // ---------------------------------------------------------------------------
@@ -879,14 +879,15 @@ if (IS_TEST) {
 // tried out on the test phone can ever turn up in the real register.
 const LIVE_ENDPOINT = "https://script.google.com/macros/s/AKfycbyW_dVCY4gwfSYDrmDHFuGQSuCyERfgGm9yjeUQDPI8zloosgN_kSeSNUmFAjl37Ro6/exec";
 
-// The TEST sheet — a copy of the register, deployed 2026-08-27. Only the
+// The TEST sheet — a copy of the register, deployed 2026-08-27 and moved to
+// the EQR work Google account 2026-09-30. Only the
 // test app writes here, so a test scan can never land in the real register.
 //
 // This is a different Apps Script attached to a different spreadsheet, which
 // is why the address is completely different and not a setting on the one
 // above. If this script is ever changed, remember it needs Deploy > Manage
 // deployments > New version, or the phone keeps talking to the old code.
-const TEST_ENDPOINT = "https://script.google.com/macros/s/AKfycbxRUMOjStqAGcCZKzS5Hv8O8ZlU6yRtpdMZYrmRqJvHDOt1lcQmv8k5Hmdl1JAttOKU1g/exec";
+const TEST_ENDPOINT = "https://script.google.com/macros/s/AKfycbxvERNETXYHC3n6ZgJI7GCjs2ykQzeaTIDFK8ZKv0ma8ZuEY0bYDX_kIThQ3bsCeYjUig/exec";
 
 const ENDPOINT = IS_TEST ? TEST_ENDPOINT : LIVE_ENDPOINT;
 
