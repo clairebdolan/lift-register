@@ -817,7 +817,7 @@ if ("serviceWorker" in navigator) {
 // Shown in the footer. Bump this whenever we push, so a phone can be asked
 // "what does the bottom of your screen say?" instead of guessing whether it
 // has the update.
-const APP_VERSION = "build 92";
+const APP_VERSION = "build 93";
 
 
 // ---------------------------------------------------------------------------
@@ -3077,7 +3077,7 @@ function drawLifts() {
   });
 
   document.getElementById("lifts").innerHTML = `
-    <p class="count">${found.length} ${found.length === 1 ? "lift" : "lifts"}
+    <p class="count">${found.length} ${found.length === 1 ? "item" : "items"}
     &middot; ${registerAge()}</p>
     <div class="list">${found.map(machineRow).join("")}</div>
     ${found.length ? "" : `<p class="lede">Nothing matches.</p>`}`;
